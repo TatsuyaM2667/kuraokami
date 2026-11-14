@@ -586,6 +586,7 @@ render :: proc() {
 		alpha: [4]u8
 		gl.ReadPixels(w - 1, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, &alpha[0])
 		fmt.eprintfln("kuraokami-shot: corner rgba=%v", alpha)
+		fmt.eprintfln("kuraokami-shot: pixels=%dx%d", w, h)
 	}
 	_ = sdl.GL_SwapWindow(app.window)
 	app.last_frame = app.now
@@ -1344,7 +1345,6 @@ main :: proc() {
 	new_tab()
 	if len(app.tabs) == 0 {fmt.eprintln("kuraokami: failed to spawn shell"); os.exit(1)}
 	_ = sdl.StartTextInput(app.window)
-	_ = sdl.SetWindowMinimumSize(app.window, 100, 60)
 	config_watch_start()
 
 	for app.running {
