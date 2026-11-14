@@ -12,6 +12,8 @@ Config :: struct {
 	ligatures:      bool,
 	fg, bg, cursor: u32,
 	selection_bg:   u32,
+	selection_fg:   u32, // NO_COLOR = keep text color
+	opacity_cells:  bool, // translucent colored cell backgrounds too (like ghostty background-opacity-cells)
 	palette:        [16]u32,
 	opacity:        f32,
 	scrollback:     int,
@@ -35,9 +37,12 @@ Config :: struct {
 	binds:          [dynamic]Keybind,
 }
 
+NO_COLOR :: u32(0xFFFFFFFF)
+
+// Default look: deep navy glass (matches the ame-shell Ghostty setup).
 DEFAULT_PALETTE := [16]u32 {
-	0x1d1f21, 0xcc6666, 0xb5bd68, 0xf0c674, 0x81a2be, 0xb294bb, 0x8abeb7, 0xc5c8c6,
-	0x666666, 0xd54e53, 0xb9ca4a, 0xe7c547, 0x7aa6da, 0xc397d8, 0x70c0b1, 0xeaeaea,
+	0x45475a, 0xf38ba8, 0xa6e3a1, 0xf9e2af, 0x89b4fa, 0xf5c2e7, 0x7fdceb, 0xbac2de,
+	0x585b70, 0xf38ba8, 0xa6e3a1, 0xf9e2af, 0x89b4fa, 0xf5c2e7, 0x94e2d5, 0xa6adc8,
 }
 
 cfg: Config
@@ -46,17 +51,20 @@ config_mtime: time.Time
 config_defaults :: proc() {
 	delete(cfg.binds)
 	cfg = Config {
-		font_family      = "monospace",
+		font_family      = "JetBrains Mono",
 		font_size        = 12,
 		ligatures        = true,
-		fg               = 0xc5c8c6,
-		bg               = 0x1d1f21,
-		cursor           = 0xc5c8c6,
-		selection_bg     = 0x373b41,
+		fg               = 0xcdd6f4,
+		bg               = 0x060913,
+		cursor           = 0xcdd6f4,
+		selection_bg     = 0x89b4fa,
+		selection_fg     = 0x060913,
+		opacity_cells    = true,
+		cursor_style     = 6,
 		palette          = DEFAULT_PALETTE,
-		opacity          = 0.85,
+		opacity          = 0.7,
 		scrollback       = 10000,
-		padding          = 4,
+		padding          = 24,
 		copy_on_select   = true,
 		animation        = true,
 		cursor_blink     = true,
@@ -125,6 +133,10 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 		case "background": bad = !set_col(&cfg.bg, v)
 		case "cursor-color": bad = !set_col(&cfg.cursor, v)
 		case "selection-background": bad = !set_col(&cfg.selection_bg, v)
+		case "selection-foreground":
+			if v == "none" do cfg.selection_fg = NO_COLOR
+			else do bad = !set_col(&cfg.selection_fg, v)
+		case "background-opacity-cells": cfg.opacity_cells = parse_bool(v)
 		case "background-opacity": if f, ok := strconv.parse_f32(v); ok do cfg.opacity = clamp(f, 0, 1)
 		case "scrollback-limit": if n, ok := strconv.parse_int(v); ok do cfg.scrollback = clamp(n, 0, 1_000_000)
 		case "command", "shell": cfg.shell = strings.clone(v)
@@ -148,6 +160,7 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 		case "theme":
 			if !allow_theme {bad = true; break}
 			src, ok := theme_source(v)
+			if ok do cfg.selection_fg = NO_COLOR // themes without selection-foreground keep the text color
 			if !ok {append(errs, fmt.tprintf("unknown theme %q", v)); continue}
 			config_apply_text(src, errs, false)
 		case "animation": cfg.animation = parse_bool(v)
@@ -190,6 +203,27 @@ theme_source :: proc(name: string) -> (string, bool) {
 Theme :: struct {name, src: string}
 
 BUILTIN_THEMES := [?]Theme {
+	{"kuraokami", `background = #060913
+foreground = #cdd6f4
+cursor-color = #cdd6f4
+selection-background = #89b4fa
+selection-foreground = #060913
+palette = 0=#45475a
+palette = 1=#f38ba8
+palette = 2=#a6e3a1
+palette = 3=#f9e2af
+palette = 4=#89b4fa
+palette = 5=#f5c2e7
+palette = 6=#7fdceb
+palette = 7=#bac2de
+palette = 8=#585b70
+palette = 9=#f38ba8
+palette = 10=#a6e3a1
+palette = 11=#f9e2af
+palette = 12=#89b4fa
+palette = 13=#f5c2e7
+palette = 14=#94e2d5
+palette = 15=#a6adc8`},
 	{"tokyonight", `background = #1a1b26
 foreground = #c0caf5
 cursor-color = #c0caf5

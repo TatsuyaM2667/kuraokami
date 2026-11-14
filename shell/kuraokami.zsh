@@ -73,29 +73,32 @@ zstyle ':completion:*' squeeze-slashes true
 zstyle ':completion:*' use-cache on
 zstyle ':completion:*' cache-path ${XDG_CACHE_HOME:-$HOME/.cache}/kuraokami/zcompcache
 
-# ---------------- prompt: path, git branch, command duration, status-colored arrow ----------------
+# ---------------- prompt ----------------
+#   ╭─ user@host in ~/dir   main ●
+#   ╰─❯                                            1.2s  ✘ 1  13:22:13
 autoload -Uz vcs_info
 zstyle ':vcs_info:*' enable git
-zstyle ':vcs_info:git:*' check-for-changes true
-zstyle ':vcs_info:git:*' unstagedstr '*'
-zstyle ':vcs_info:git:*' stagedstr '+'
-zstyle ':vcs_info:git:*' formats $' %F{green}\u2387 %b%f%F{yellow}%u%c%f'
-zstyle ':vcs_info:git:*' actionformats $' %F{green}\u2387 %b%f %F{red}(%a)%f%F{yellow}%u%c%f'
+zstyle ':vcs_info:*' check-for-changes true
+zstyle ':vcs_info:*' unstagedstr '%F{#ffd58a}●%f'
+zstyle ':vcs_info:*' stagedstr '%F{#7ee0a1}●%f'
+zstyle ':vcs_info:git:*' formats '  %F{#c8a2ff} %b%f %u%c'
+zstyle ':vcs_info:git:*' actionformats '  %F{#c8a2ff} %b%f %F{#ff7a8a}(%a)%f %u%c'
+zmodload zsh/datetime 2>/dev/null
+typeset -gF _ko_t0=0
+_ko_prompt_exec() { _ko_t0=$EPOCHREALTIME }
 _ko_prompt_pre() {
   vcs_info
-  _ko_dur=
-  if [[ -n $_ko_t0 ]]; then
-    local s=$(( EPOCHSECONDS - _ko_t0 ))
-    (( s >= 3 )) && _ko_dur=" %F{8}${s}s%f"
+  _ko_took=
+  if (( _ko_t0 > 0 )); then
+    local -F d=$(( EPOCHREALTIME - _ko_t0 ))
+    (( d >= 1.0 )) && _ko_took="%F{#8b97b3}$(printf '%.1fs' $d)%f  "
+    _ko_t0=0
   fi
-  _ko_t0=
 }
-_ko_prompt_exec() { _ko_t0=$EPOCHSECONDS }
-zmodload zsh/datetime 2>/dev/null
-add-zsh-hook precmd _ko_prompt_pre
 add-zsh-hook preexec _ko_prompt_exec
-PROMPT=$'\n%F{blue}%B%~%b%f${vcs_info_msg_0_}${_ko_dur}\n%(?.%F{magenta}.%F{red})❯%f '
-RPROMPT='%(1j.%F{yellow}✦%j%f .)%F{8}%*%f'
+add-zsh-hook precmd _ko_prompt_pre
+PROMPT=$'\n%F{#4b5675}╭─%f %F{#c8a2ff}%n@%m%f %F{#4b5675}in%f %F{#7ab8ff}%B %(4~|…/%3~|%~)%b%f${vcs_info_msg_0_}\n%F{#4b5675}╰─%f%(?.%F{#7ab8ff}.%F{#ff7a8a})❯%f '
+RPROMPT='${_ko_took}%(?..%F{#ff7a8a}✘ %?%f  )%(1j.%F{#ffd58a}✦%j%f  .)%F{#4b5675}%*%f'
 
 # ---------------- after ~/.zshrc: completion init, suggestions, highlighting ----------------
 _ko_late() {

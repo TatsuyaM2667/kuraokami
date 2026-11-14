@@ -49,7 +49,7 @@ Odin + SDL3 + OpenGL 3.3 + FreeType / HarfBuzz ・ バイナリ約 630 KB ・ �
 | 🇯🇵 **日本語** | IME インライン変換、全角幅、フォント自動フォールバック、カラー絵文字、書記素クラスタ |
 | 🖥️ **起動時 fastfetch** | 最初のタブで fastfetch を表示してからシェルへ |
 | 🐚 **zsh を快適に** | シェル統合・履歴からの入力候補・シンタックスハイライト・補完メニュー・git 対応プロンプトを内蔵（設定ゼロで使える） |
-| 🪟 **半透明** | 既定で背景 85% 不透明。設定を保存すれば即座に反映 |
+| 🪟 **ガラスのような見た目** | 既定は深い紺 `#060913` の背景を 70% 不透明で表示（色付きセルも半透明）。設定を保存すれば即座に反映 |
 
 ## クイックスタート
 
@@ -153,7 +153,7 @@ macOS では `Cmd+C` / `Cmd+V` / `Cmd+T` / `Cmd+W` / `Cmd+D` なども使えま�
 theme = tokyonight
 font-family = JetBrainsMono Nerd Font Mono
 font-size = 12
-background-opacity = 0.85
+background-opacity = 0.7
 custom-shader = builtin:aurora
 keybind = ctrl+shift+d=split_right
 ```
@@ -163,15 +163,17 @@ keybind = ctrl+shift+d=split_right
 | キー | 既定値 | 説明 |
 |---|---|---|
 | `theme` | — | 組込テーマ名、または `~/.config/kuraokami/themes/<名前>` |
-| `font-family` | `monospace` | fontconfig のファミリ名（Windows は `C:\Windows\Fonts` 内のファイル名） |
+| `font-family` | `JetBrains Mono` | fontconfig のファミリ名（Windows は `C:\Windows\Fonts` 内のファイル名） |
 | `font-size` | `12` | ポイント |
 | `font-ligatures` | `true` | リガチャの有効・無効 |
-| `foreground` / `background` | `#c5c8c6` / `#1d1f21` | 文字色 / 背景色 |
-| `cursor-color` | `#c5c8c6` | カーソル色 |
-| `selection-background` | `#373b41` | 選択範囲の色 |
+| `foreground` / `background` | `#cdd6f4` / `#060913` | 文字色 / 背景色 |
+| `cursor-color` | `#cdd6f4` | カーソル色 |
+| `selection-background` | `#89b4fa` | 選択範囲の背景色 |
+| `selection-foreground` | `#060913` | 選択範囲の文字色（`none` で元の色のまま） |
 | `palette` | — | `palette = N=#rrggbb`（N は 0〜15） |
-| `background-opacity` | `0.85` | 0〜1。保存すると即座に反映 |
-| `cursor-style` | `block` | `block` / `underline` / `bar` |
+| `background-opacity` | `0.7` | 0〜1。保存すると即座に反映 |
+| `background-opacity-cells` | `true` | 色付きのセル背景も半透明にする |
+| `cursor-style` | `bar` | `block` / `underline` / `bar` |
 | `cursor-blink` | `true` | フェード点滅（30 秒無操作で停止） |
 | `cursor-trail` | `true` | カーソルのスライドと残像 |
 | `smooth-scroll` | `true` | スムーススクロール |
@@ -185,13 +187,13 @@ keybind = ctrl+shift+d=split_right
 | `fetch-command` | `fastfetch` | 起動時に実行するコマンド |
 | `command` | `$SHELL` | 起動するシェル |
 | `scrollback-limit` | `10000` | スクロールバック行数 |
-| `window-padding` | `4` | ペイン内の余白（px） |
+| `window-padding` | `24` | ペイン内の余白（px） |
 | `copy-on-select` | `true` | 選択したら PRIMARY にコピー |
 | `keybind` | — | 下記参照（複数行で指定可） |
 
 ### 組込テーマ
 
-`tokyonight` ・ `catppuccin-mocha` ・ `dracula` ・ `gruvbox-dark` ・ `nord` ・ `solarized-dark`
+`kuraokami`（既定の見た目） ・ `tokyonight` ・ `catppuccin-mocha` ・ `dracula` ・ `gruvbox-dark` ・ `nord` ・ `solarized-dark`
 
 自作テーマは `~/.config/kuraokami/themes/<名前>` に、設定ファイルと同じ書式（`background`、`foreground`、`palette` など）で置きます。
 `theme =` の後に書いた色指定はテーマより優先されます。
@@ -236,8 +238,13 @@ zsh には `ZDOTDIR` 経由で、bash には `--rcfile` 経由で読み込ませ
 | 補完 | メニュー選択、大文字小文字を区別しない、部分一致、色付き、グループ表示 |
 | 履歴 | 10 万件、タブ間で共有、重複除去、スペース始まりは記録しない |
 | キー | `↑`/`↓` で入力中の文字から始まる履歴を検索、`Ctrl+←/→` で単語移動、`Ctrl+Backspace` で単語削除、`Home`/`End`/`Delete`、`Ctrl+X Ctrl+E` でエディタ編集 |
-| プロンプト | ディレクトリ、git ブランチと変更状態、3 秒以上かかったコマンドの所要時間、終了ステータスで色が変わる `❯`、右側に時刻とジョブ数 |
+| プロンプト | 2 行構成（下の例）。git ブランチと変更状態（●）、1 秒以上かかったコマンドの所要時間、失敗時の `✘ 終了コード`、ジョブ数、時刻 |
 | その他 | `auto_cd`（ディレクトリ名だけで移動）、`ll` / `la` / `..` などのエイリアス、zsh の初回設定ウィザードを出さない |
+
+```
+╭─ user@host in ~/projects/kuraokami   main ●
+╰─❯                                              17.0s  ✘ 1  13:22:13
+```
 
 プロンプトなどを自分の `.zshrc` で設定していれば、そちらが使われます。
 

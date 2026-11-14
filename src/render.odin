@@ -553,6 +553,7 @@ draw_term :: proc(t: ^Term, r: Rect, o: Draw_Opts) {
 	cps := make([dynamic]u32, context.temp_allocator)
 	cmap := make([dynamic]u16, context.temp_allocator)
 	match_bg, cur_bg := s.palette[3], s.palette[1]
+	cell_alpha := u8(cfg.opacity * 255) if cfg.opacity_cells else 255
 	for line, i in s.lines {
 		if line == nil do continue
 		y := s.y0 + i
@@ -573,6 +574,7 @@ draw_term :: proc(t: ^Term, r: Rect, o: Draw_Opts) {
 			is_default_bg := bg == bgdef && !inv
 			if sel_on && in_selection(o.sel, abs, x) {
 				bg = cfg.selection_bg
+				if cfg.selection_fg != NO_COLOR do fg = cfg.selection_fg
 				is_default_bg = false
 			}
 			if hl != nil && hl[x] != 0 {
@@ -586,7 +588,7 @@ draw_term :: proc(t: ^Term, r: Rect, o: Draw_Opts) {
 			if .Dim in cell.attr do fg = mix(fg, bg, 0.4)
 			px := f32(r.x + x * cw)
 			wcells := 2 if cell.wide == 1 else 1
-			if !is_default_bg do quad(&ren.bg, px, py, px + f32(cw * wcells), py + f32(ch), rgba(bg))
+			if !is_default_bg do quad(&ren.bg, px, py, px + f32(cw * wcells), py + f32(ch), rgba(bg, cell_alpha))
 			if cell.ch > ' ' && .Hidden not_in cell.attr {
 				paint[x] = {fg, (1 if .Bold in cell.attr else 0) | (2 if .Italic in cell.attr else 0), true}
 			}
