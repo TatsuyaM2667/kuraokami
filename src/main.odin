@@ -140,6 +140,10 @@ in_path :: proc(name: string) -> bool {
 shell_argv :: proc() -> ([]string, [][2]string) {
 	if len(app.exec_argv) > 0 && len(app.tabs) == 0 do return app.exec_argv, nil
 	shell := cfg.shell
+	// zsh is the built-in experience (integration + preset), even when the login shell is /bin/sh.
+	when ODIN_OS != .Windows {
+		if shell == "" && in_path("zsh") do shell = "zsh"
+	}
 	if shell == "" do shell = os.get_env("SHELL", context.temp_allocator)
 	when ODIN_OS == .Windows {
 		if shell == "" do shell = "powershell.exe"
@@ -155,7 +159,10 @@ shell_argv :: proc() -> ([]string, [][2]string) {
 			if len(fetch) > 0 && in_path(fetch[0]) {
 				out := make([dynamic]string, context.temp_allocator)
 				// $0 = the shell itself so fastfetch reports the real shell
-				append(&out, "/bin/sh", "-c", fmt.tprintf("%s; exec \"$0\" \"$@\"", cfg.fetch_command))
+				// Wait (max ~0.6s) until the tiling WM has settled the size, so the fetch isn't printed at the
+				// pre-tile size and then rewrapped.
+				WAIT :: `p=; n=0; i=0; while [ $i -lt 12 ]; do c=$(stty size 2>/dev/null); if [ "$c" = "$p" ]; then n=$((n+1)); [ $n -ge 2 ] && break; else n=0; fi; p=$c; i=$((i+1)); sleep 0.05; done; `
+				append(&out, "/bin/sh", "-c", fmt.tprintf("%s%s; exec \"$0\" \"$@\"", WAIT, cfg.fetch_command))
 				append(&out, ..argv)
 				return out[:], env
 			}
