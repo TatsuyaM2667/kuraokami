@@ -4,6 +4,8 @@ package kuraokami
 import "core:c"
 import "core:c/libc"
 import "core:sys/posix"
+import "core:os"
+import "core:thread"
 import "core:fmt"
 import "core:strings"
 
@@ -89,18 +91,29 @@ pty_resize :: proc(t: ^Term) {
 	ioctl(t.pty.fd, TIOCSWINSZ, &ws)
 }
 
-pty_write :: proc(t: ^Term, data: []u8) {
+// Blocking write; only the per-pane writer thread calls this (see pty_queue.odin).
+pty_write_raw :: proc(t: ^Term, data: []u8) -> bool {
 	d := data
 	for len(d) > 0 {
 		n := write(t.pty.fd, raw_data(d), uint(len(d)))
-		if n <= 0 do return
+		if n <= 0 do return false
 		d = d[n:]
 	}
+	return true
 }
 
-pty_close :: proc(t: ^Term) {
-	if !t.exited do kill(t.pty.pid, 1) // exited pids are auto-reaped and may be reused
+// Called once every thread is done with the Term: only then may the fd number be reused.
+pty_free :: proc(t: ^Term) {
 	close(t.pty.fd)
+}
+
+// Hang up the session (shell + foreground job). The fd stays open until pty_free so that the
+// reader/writer threads can never touch a reused fd number.
+pty_close :: proc(t: ^Term) {
+	if t.exited do return // exited pids are auto-reaped and may be reused
+	fg := posix.tcgetpgrp(posix.FD(t.pty.fd))
+	if fg > 0 && i32(fg) != t.pty.pid do kill(-i32(fg), 1)
+	kill(t.pty.pid, 1)
 }
 
 // Current directory of the shell (fallback when OSC 7 is not emitted).
@@ -158,3 +171,60 @@ remove_file :: proc(path: string) {
 	unlink(strings.clone_to_cstring(path, context.temp_allocator))
 }
 
+
+// ---------- quick terminal IPC (unix socket in XDG_RUNTIME_DIR) ----------
+
+quick_socket_path :: proc() -> string {
+	dir := os.get_env("XDG_RUNTIME_DIR", context.temp_allocator)
+	if dir == "" do return fmt.tprintf("/tmp/kuraokami-quick-%d.sock", posix.getuid())
+	return fmt.tprintf("%s/kuraokami-quick.sock", dir)
+}
+
+quick_addr :: proc() -> (addr: posix.sockaddr_un, ok: bool) {
+	p := quick_socket_path()
+	if len(p) >= len(addr.sun_path) do return addr, false
+	addr.sun_family = .UNIX
+	for i in 0 ..< len(p) do addr.sun_path[i] = c.char(p[i])
+	return addr, true
+}
+
+// Ask a running quick terminal to toggle. Returns false if none is running.
+quick_send_toggle :: proc() -> bool {
+	addr, ok := quick_addr()
+	if !ok do return false
+	fd := posix.socket(.UNIX, .STREAM)
+	if fd < 0 do return false
+	defer posix.close(fd)
+	if posix.connect(fd, (^posix.sockaddr)(&addr), size_of(addr)) != .OK do return false
+	msg := "toggle\n"
+	write(i32(fd), raw_data(msg), uint(len(msg)))
+	return true
+}
+
+// Become the quick terminal: accept toggle requests in a background thread.
+quick_listen :: proc(on_toggle: proc()) -> bool {
+	addr, ok := quick_addr()
+	if !ok do return false
+	_ = posix.unlink(strings.clone_to_cstring(quick_socket_path(), context.temp_allocator)) // stale socket from a crash
+	fd := posix.socket(.UNIX, .STREAM)
+	if fd < 0 do return false
+	if posix.bind(fd, (^posix.sockaddr)(&addr), size_of(addr)) != .OK || posix.listen(fd, 4) != .OK {
+		posix.close(fd)
+		return false
+	}
+	thread.create_and_start_with_poly_data2(fd, on_toggle, proc(fd: posix.FD, on_toggle: proc()) {
+		for {
+			c := posix.accept(fd, nil, nil)
+			if c < 0 do continue
+			buf: [16]u8
+			n := read(i32(c), &buf[0], len(buf))
+			posix.close(c)
+			if n > 0 do on_toggle()
+		}
+	}, self_cleanup = true)
+	return true
+}
+
+quick_cleanup :: proc() {
+	_ = posix.unlink(strings.clone_to_cstring(quick_socket_path(), context.temp_allocator))
+}

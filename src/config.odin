@@ -35,6 +35,9 @@ Config :: struct {
 	shell_preset:   bool,
 	clipboard_write: bool,
 	paste_protection: bool,
+	notify_after:   f64, // seconds; 0 = off
+	restore_session: bool,
+	quick_autohide: bool,
 	fetch_command:  string,
 	binds:          [dynamic]Keybind,
 }
@@ -79,6 +82,9 @@ config_defaults :: proc() {
 		shell_preset     = true,
 		clipboard_write  = true,
 		paste_protection = true,
+		notify_after     = 10,
+		restore_session  = true,
+		quick_autohide   = true,
 		fetch_command    = "fastfetch",
 	}
 	binds_defaults()
@@ -179,6 +185,11 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 		case "shell-preset": cfg.shell_preset = parse_bool(v)
 		case "clipboard-write": cfg.clipboard_write = v == "allow" || parse_bool(v)
 		case "clipboard-paste-protection": cfg.paste_protection = parse_bool(v)
+		case "restore-session": cfg.restore_session = parse_bool(v)
+		case "quick-terminal-autohide": cfg.quick_autohide = parse_bool(v)
+		case "notify-on-command-finish-after":
+			if f, ok := strconv.parse_f64(v); ok && f >= 0 do cfg.notify_after = f
+			else do bad = true
 		case "fetch-command": cfg.fetch_command = strings.clone(v)
 		case "keybind":
 			if v == "clear" do clear(&cfg.binds)

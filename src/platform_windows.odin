@@ -81,9 +81,9 @@ pty_read :: proc(t: ^Term, buf: []u8) -> int {
 	return int(n)
 }
 
-pty_write :: proc(t: ^Term, data: []u8) {
+pty_write_raw :: proc(t: ^Term, data: []u8) -> bool {
 	n: win.DWORD
-	win.WriteFile(t.pty.in_w, raw_data(data), win.DWORD(len(data)), &n, nil)
+	return bool(win.WriteFile(t.pty.in_w, raw_data(data), win.DWORD(len(data)), &n, nil))
 }
 
 pty_resize :: proc(t: ^Term) {
@@ -92,10 +92,16 @@ pty_resize :: proc(t: ^Term) {
 
 pty_close :: proc(t: ^Term) {
 	ClosePseudoConsole(t.pty.hpc) // ends the client and unblocks the reader
-	win.CloseHandle(t.pty.in_w)
 	if !t.exited do win.TerminateProcess(t.pty.process, 1)
+}
+
+// Called once every thread is done with the Term.
+pty_free :: proc(t: ^Term) {
+	win.CloseHandle(t.pty.in_w)
+	win.CloseHandle(t.pty.out_r)
 	win.CloseHandle(t.pty.process)
 	DeleteProcThreadAttributeList(raw_data(t.pty.attrs))
+	delete(t.pty.attrs)
 }
 
 pty_cwd :: proc(t: ^Term) -> string {return ""}
@@ -110,3 +116,8 @@ notify :: proc(title, body: string) {} // shortcut: no toast notifications on Wi
 shm_read :: proc(name: string, size: int) -> ([]u8, bool) {return nil, false}
 
 remove_file :: proc(path: string) {_ = os.remove(path)}
+
+// shortcut: no quick terminal IPC on Windows yet (needs a named pipe); --quick opens a normal window.
+quick_send_toggle :: proc() -> bool {return false}
+quick_listen :: proc(on_toggle: proc()) -> bool {return false}
+quick_cleanup :: proc() {}

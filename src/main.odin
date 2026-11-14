@@ -74,11 +74,27 @@ App :: struct {
 	pending_paste_time: f64,
 	hover_url:     string, // link target shown while Ctrl is held over it
 	last_notify:   f64,
+	quick:         bool, // running as the quick terminal (--quick)
+	quick_hidden:  bool,
 }
 
 app: App
 wake_pending: bool // atomic
 config_dirty: bool // atomic, set by the config watcher
+quick_toggle: bool // atomic, set by the quick-terminal IPC thread
+
+quick_hide :: proc() {
+	_ = sdl.HideWindow(app.window)
+	app.quick_hidden = true
+}
+
+quick_show :: proc() {
+	_ = sdl.ShowWindow(app.window)
+	_ = sdl.RaiseWindow(app.window)
+	app.quick_hidden = false
+	app.start_time = app.now // replay the fade-in
+	app.redraw = true
+}
 
 now_s :: proc() -> f64 {return f64(sdl.GetTicksNS()) / 1e9}
 
@@ -92,6 +108,7 @@ push_wake :: proc() {
 // Frees the Term once both the UI and the reader thread are done with it.
 term_release :: proc(t: ^Term) {
 	if sync.atomic_sub(&t.refs, 1) == 1 {
+		pty_free(t)
 		term_destroy(t)
 		free(t)
 	}
@@ -102,13 +119,13 @@ reader_proc :: proc(t: ^Term) {
 	out := make([dynamic]u8)
 	defer delete(out)
 	for {
-		// After the pane is closed its fd number may be reused by a new PTY: never read it again.
-		n := -1 if sync.atomic_load(&t.closing) else pty_read(t, buf[:])
+		n := pty_read(t, buf[:])
 		if n <= 0 || sync.atomic_load(&t.closing) {
 			sync.mutex_lock(&t.mu)
 			t.exited = true
 			sync.mutex_unlock(&t.mu)
 			if !sync.atomic_load(&t.closing) do push_wake()
+			term_stop(t) // also wakes the writer so it can exit
 			term_release(t)
 			return
 		}
@@ -199,8 +216,9 @@ new_term :: proc(cwd: string, argv: []string = nil) -> ^Term {
 		free(t)
 		return nil
 	}
-	t.refs = 2 // UI + reader
+	t.refs = 3 // UI + reader + writer
 	thread.create_and_start_with_poly_data(t, reader_proc, context, self_cleanup = true)
+	thread.create_and_start_with_poly_data(t, writer_proc, context, self_cleanup = true)
 	return t
 }
 
@@ -253,8 +271,8 @@ first_leaf :: proc(n: ^Node) -> ^Node {
 close_leaf :: proc(tab: ^Tab, leaf: ^Node) -> bool {
 	t := leaf.term
 	if app.sel.term == t do app.sel = {}
-	sync.atomic_store(&t.closing, true)
 	pty_close(t)
+	term_stop(t)
 	// GPU textures belong to this (GL) thread: release them before the Term can be freed.
 	sync.mutex_lock(&t.mu)
 	for _, img in t.gfx.images do if img.tex != 0 {tex := img.tex; gl.DeleteTextures(1, &tex); img.tex = 0}
@@ -285,7 +303,11 @@ close_pane :: proc(leaf: ^Node) {
 		if !close_leaf(tab, leaf) {
 			free(tab)
 			ordered_remove(&app.tabs, i)
-			if len(app.tabs) == 0 {app.running = false; return}
+			if len(app.tabs) == 0 {
+				app.running = false
+				if !app.quick do session_forget() // every shell exited on purpose: start fresh next time
+				return
+			}
 			app.tab_prev = -1
 			app.cur = min(app.cur, len(app.tabs) - 1)
 		}
@@ -1325,6 +1347,10 @@ on_wheel :: proc(e: sdl.MouseWheelEvent) {
 
 process_wake :: proc() {
 	sync.atomic_store(&wake_pending, false)
+	if sync.atomic_exchange(&quick_toggle, false) {
+		if app.quick_hidden do quick_show()
+		else do quick_hide()
+	}
 	if sync.atomic_exchange(&config_dirty, false) && config_file_mtime() != config_mtime do apply_config()
 	dead := make([dynamic]^Node, context.temp_allocator)
 	Ctx :: struct {dead: ^[dynamic]^Node, visible: bool}
@@ -1345,6 +1371,17 @@ process_wake :: proc() {
 				t.clipboard_pending = false
 				// OSC 52: programs (also remote ones over ssh) may set the clipboard only if allowed.
 				if cfg.clipboard_write do _ = sdl.SetClipboardText(strings.clone_to_cstring(t.clipboard_set, context.temp_allocator))
+			}
+			if t.cmd_done.pending {
+				// Long command finished while you weren't looking at it: tell the desktop.
+				d := t.cmd_done
+				t.cmd_done.pending = false
+				unseen := !ctx.visible || sdl.GetKeyboardFocus() != app.window
+				if cfg.notify_after > 0 && d.seconds >= cfg.notify_after && unseen {
+					cmd := t.title if t.title != "" else "command"
+					head := "✓ 完了" if d.status == 0 else fmt.tprintf("✗ 失敗 (終了コード %d)", d.status)
+					notify(head, fmt.tprintf("%s — %.1f 秒", cmd, d.seconds))
+				}
 			}
 			if t.bell {
 				t.bell = false
@@ -1385,6 +1422,9 @@ main :: proc() {
 		case "-h", "--help":
 			fmt.println("usage: kuraokami [-e command args...]\nconfig:", config_path())
 			return
+		case "--quick":
+			if quick_send_toggle() do return // an instance is running: it shows/hides itself
+			app.quick = true
 		case "-e":
 			app.exec_argv = args[i + 1:]
 			i = len(args)
@@ -1433,10 +1473,16 @@ main :: proc() {
 	if e := post_shader_load(cfg.custom_shader); e != "" do show_toast(e)
 	else if len(errs) > 0 do show_toast(fmt.tprintf("config: %s", strings.join(errs, " / ", context.temp_allocator)))
 	app.running = true
-	new_tab()
+	if !(cfg.restore_session && len(app.exec_argv) == 0 && !app.quick && session_restore()) do new_tab()
 	if len(app.tabs) == 0 {fmt.eprintln("kuraokami: failed to spawn shell"); os.exit(1)}
 	_ = sdl.StartTextInput(app.window)
 	config_watch_start()
+	if app.quick {
+		// A window with a size hint floats on River/ame-shell instead of being tiled.
+		_ = sdl.SetWindowSize(app.window, 1100, 420)
+		_ = sdl.SetWindowMinimumSize(app.window, 1100, 420)
+		quick_listen(proc() {sync.atomic_store(&quick_toggle, true); push_wake()})
+	}
 
 	for app.running {
 		ev: sdl.Event
@@ -1472,13 +1518,17 @@ main :: proc() {
 		free_all(context.temp_allocator)
 	}
 	for tab in app.tabs do for_leaves(tab.root, proc(n: ^Node, _: rawptr) {pty_close(n.term)}, nil)
+	if app.quick do quick_cleanup()
 	sdl.Quit()
 }
 
 handle_event :: proc(ev: ^sdl.Event) {
 	if u32(ev.type) == app.wake_type {process_wake(); return}
 	#partial switch ev.type {
-	case .QUIT: app.running = false
+	case .QUIT:
+		if app.quick {quick_hide(); return} // the quick terminal stays alive in the background
+		if cfg.restore_session && len(app.exec_argv) == 0 do session_save()
+		app.running = false
 	case .WINDOW_PIXEL_SIZE_CHANGED, .WINDOW_RESIZED:
 		layout()
 	case .WINDOW_DISPLAY_SCALE_CHANGED:
@@ -1486,6 +1536,7 @@ handle_event :: proc(ev: ^sdl.Event) {
 		set_font_size(app.font_pt)
 	case .WINDOW_EXPOSED: app.redraw = true
 	case .WINDOW_FOCUS_GAINED, .WINDOW_FOCUS_LOST:
+		if ev.type == .WINDOW_FOCUS_LOST && app.quick && cfg.quick_autohide && !app.quick_hidden do quick_hide()
 		app.redraw = true
 		app.last_input = app.now
 		if ev.type == .WINDOW_FOCUS_GAINED && ODIN_OS != .Linux && config_file_mtime() != config_mtime do apply_config()

@@ -7,6 +7,7 @@ import "core:fmt"
 import "core:unicode"
 import "core:unicode/utf8"
 import "core:encoding/base64"
+import "core:time"
 
 // Color encoding: bit 31 = palette index (low byte), bit 30 = default (0 fg, 1 bg), else 0xRRGGBB.
 PAL :: u32(1 << 31)
@@ -131,6 +132,9 @@ Term :: struct {
 	link_ids:        map[string]u16,
 	cur_link:        u16,
 	prompts:         [dynamic]i64,
+	cmd_start:       time.Tick, // OSC 133;C
+	cmd_running:     bool,
+	cmd_done:        Cmd_Done,  // set on OSC 133;D, consumed by the UI thread
 	palette:         [256]u32,
 	fg_color, bg_color, cursor_color: u32,
 	// graphics
@@ -140,7 +144,10 @@ Term :: struct {
 	pty:             Pty,
 	exited:          bool,
 	closing:         bool, // atomic: pane closed, the reader must stop touching the fd
-	refs:            i32,  // atomic: UI + reader thread; the last one to let go frees the Term
+	refs:            i32,  // atomic: UI + reader + writer threads; the last one to let go frees the Term
+	wq:              [dynamic]u8, // pending input for the PTY (pty_queue.odin)
+	wmu:             sync.Mutex,
+	wcond:           sync.Cond,
 	reply:           [dynamic]u8,
 }
 
@@ -189,6 +196,7 @@ term_destroy :: proc(t: ^Term) {
 	delete(t.cluster_ids)
 	delete(t.prompts)
 	delete(t.reply)
+	delete(t.wq)
 	delete(t.notify)
 	gfx_destroy(&t.gfx)
 }
@@ -1138,6 +1146,15 @@ osc_dispatch :: proc(t: ^Term) {
 			abs := t.total_pushed + i64(t.cy)
 			if len(t.prompts) == 0 || t.prompts[len(t.prompts) - 1] != abs do append(&t.prompts, abs)
 			if len(t.prompts) > 4096 do remove_range(&t.prompts, 0, 1024)
+		} else if strings.has_prefix(rest, "C") {
+			t.cmd_start = time.tick_now()
+			t.cmd_running = true
+		} else if strings.has_prefix(rest, "D") && t.cmd_running {
+			// OSC 133;D;<status>: remember the finished command for the completion notification.
+			t.cmd_running = false
+			status := 0
+			if i := strings.index_byte(rest, ';'); i >= 0 do status, _ = strconv.parse_int(rest[i + 1:])
+			t.cmd_done = {time.duration_seconds(time.tick_since(t.cmd_start)), status, true}
 		}
 	}
 }
@@ -1283,4 +1300,10 @@ MAX_STR :: 64 << 20 // 64 MiB: sixel images, kitty graphics chunks
 str_push :: #force_inline proc(t: ^Term, b: u8, limit: int) {
 	if len(t.strbuf) >= limit {t.str_overflow = true; return}
 	append(&t.strbuf, b)
+}
+
+Cmd_Done :: struct {
+	seconds: f64,
+	status:  int,
+	pending: bool,
 }
