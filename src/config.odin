@@ -29,6 +29,8 @@ Config :: struct {
 	shader_animation: bool,
 	// startup
 	startup_fetch:  bool,
+	shell_integration: bool,
+	shell_preset:   bool,
 	fetch_command:  string,
 	binds:          [dynamic]Keybind,
 }
@@ -52,7 +54,7 @@ config_defaults :: proc() {
 		cursor           = 0xc5c8c6,
 		selection_bg     = 0x373b41,
 		palette          = DEFAULT_PALETTE,
-		opacity          = 1,
+		opacity          = 0.85,
 		scrollback       = 10000,
 		padding          = 4,
 		copy_on_select   = true,
@@ -63,6 +65,8 @@ config_defaults :: proc() {
 		visual_bell      = true,
 		shader_animation = true,
 		startup_fetch    = true,
+		shell_integration = true,
+		shell_preset     = true,
 		fetch_command    = "fastfetch",
 	}
 	binds_defaults()
@@ -154,6 +158,8 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 		case "custom-shader": cfg.custom_shader = strings.clone(v)
 		case "custom-shader-animation": cfg.shader_animation = parse_bool(v)
 		case "startup-fetch": cfg.startup_fetch = parse_bool(v)
+		case "shell-integration": cfg.shell_integration = parse_bool(v)
+		case "shell-preset": cfg.shell_preset = parse_bool(v)
 		case "fetch-command": cfg.fetch_command = strings.clone(v)
 		case "keybind":
 			if v == "clear" do clear(&cfg.binds)

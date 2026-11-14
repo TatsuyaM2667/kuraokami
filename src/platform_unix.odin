@@ -47,7 +47,7 @@ platform_init :: proc() {
 	posix.signal(.SIGCHLD, auto_cast posix.SIG_IGN) // auto-reap shells and helpers
 }
 
-pty_spawn :: proc(t: ^Term, cwd: string, argv_s: []string) -> bool {
+pty_spawn :: proc(t: ^Term, cwd: string, argv_s: []string, env: [][2]string = nil) -> bool {
 	ws := Winsize{u16(t.rows), u16(t.cols), u16(t.cols * t.cell_w), u16(t.rows * t.cell_h)}
 	// Everything the child needs is prepared before fork (no allocation after fork).
 	argv: [64]cstring
@@ -59,6 +59,8 @@ pty_spawn :: proc(t: ^Term, cwd: string, argv_s: []string) -> bool {
 	}
 	if n == 0 do return false
 	cwd_c := strings.clone_to_cstring(cwd, context.temp_allocator) if cwd != "" else nil
+	env_c := make([][2]cstring, len(env), context.temp_allocator)
+	for e, i in env do env_c[i] = {strings.clone_to_cstring(e[0], context.temp_allocator), strings.clone_to_cstring(e[1], context.temp_allocator)}
 	fd: c.int
 	pid := forkpty(&fd, nil, nil, &ws)
 	if pid < 0 do return false
@@ -69,6 +71,7 @@ pty_spawn :: proc(t: ^Term, cwd: string, argv_s: []string) -> bool {
 		setenv("TERM_PROGRAM", "kuraokami", 1)
 		setenv("TERM_PROGRAM_VERSION", VERSION, 1)
 		unsetenv("TERMINFO")
+		for e in env_c do setenv(e[0], e[1], 1)
 		if cwd_c != nil do chdir(cwd_c)
 		execvp(argv[0], &argv[0])
 		_exit(127)

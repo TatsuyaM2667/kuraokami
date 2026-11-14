@@ -26,6 +26,7 @@ Odin + SDL3 + OpenGL 3.3 + FreeType / HarfBuzz ・ バイナリ約 630 KB ・ �
 - [機能一覧](#機能一覧)
 - [キーバインド](#キーバインド)
 - [設定](#設定)
+- [シェル統合と zsh プリセット](#シェル統合と-zsh-プリセット)
 - [アニメーションとカスタムシェーダー](#アニメーションとカスタムシェーダー)
 - [画像・動画の表示](#画像動画の表示)
 - [パフォーマンス](#パフォーマンス)
@@ -47,6 +48,8 @@ Odin + SDL3 + OpenGL 3.3 + FreeType / HarfBuzz ・ バイナリ約 630 KB ・ �
 | 🖼️ **画像・動画** | Kitty graphics protocol（`mpv --vo=kitty` で動画再生）と Sixel |
 | 🇯🇵 **日本語** | IME インライン変換、全角幅、フォント自動フォールバック、カラー絵文字、書記素クラスタ |
 | 🖥️ **起動時 fastfetch** | 最初のタブで fastfetch を表示してからシェルへ |
+| 🐚 **zsh を快適に** | シェル統合・履歴からの入力候補・シンタックスハイライト・補完メニュー・git 対応プロンプトを内蔵（設定ゼロで使える） |
+| 🪟 **半透明** | 既定で背景 85% 不透明。設定を保存すれば即座に反映 |
 
 ## クイックスタート
 
@@ -150,7 +153,7 @@ macOS では `Cmd+C` / `Cmd+V` / `Cmd+T` / `Cmd+W` / `Cmd+D` なども使えま�
 theme = tokyonight
 font-family = JetBrainsMono Nerd Font Mono
 font-size = 12
-background-opacity = 0.92
+background-opacity = 0.85
 custom-shader = builtin:aurora
 keybind = ctrl+shift+d=split_right
 ```
@@ -167,7 +170,7 @@ keybind = ctrl+shift+d=split_right
 | `cursor-color` | `#c5c8c6` | カーソル色 |
 | `selection-background` | `#373b41` | 選択範囲の色 |
 | `palette` | — | `palette = N=#rrggbb`（N は 0〜15） |
-| `background-opacity` | `1` | 0〜1。透過の有無の切り替えは再起動後に反映 |
+| `background-opacity` | `0.85` | 0〜1。保存すると即座に反映 |
 | `cursor-style` | `block` | `block` / `underline` / `bar` |
 | `cursor-blink` | `true` | フェード点滅（30 秒無操作で停止） |
 | `cursor-trail` | `true` | カーソルのスライドと残像 |
@@ -176,6 +179,8 @@ keybind = ctrl+shift+d=split_right
 | `animation` | `true` | `false` ですべてのアニメーションを停止 |
 | `custom-shader` | — | `builtin:aurora` / `builtin:crt` / `builtin:cursor-glow` / `.glsl` ファイルのパス |
 | `custom-shader-animation` | `true` | フォーカス中は毎フレーム描画（省電力優先なら `false`） |
+| `shell-integration` | `true` | zsh / bash のシェル統合（OSC 7 / 133、タイトル） |
+| `shell-preset` | `true` | 内蔵 zsh プリセット（入力候補・ハイライト・補完・プロンプトなど） |
 | `startup-fetch` | `true` | 起動時に fastfetch を実行 |
 | `fetch-command` | `fastfetch` | 起動時に実行するコマンド |
 | `command` | `$SHELL` | 起動するシェル |
@@ -209,6 +214,32 @@ keybind = clear                      # 既定のバインドを全部消す
 `scroll_page_up` `scroll_page_down` `scroll_top` `scroll_bottom` `prompt_prev` `prompt_next`
 `font_inc` `font_dec` `font_reset` `open_config` `reload_config` `search` `clear_scrollback`
 `toggle_fullscreen` `unbind`
+
+## シェル統合と zsh プリセット
+
+kuraokami は zsh と bash 用のスクリプトを内蔵しています。起動時に `~/.local/share/kuraokami/shell/` へ書き出し、
+zsh には `ZDOTDIR` 経由で、bash には `--rcfile` 経由で読み込ませます（Ghostty と同じ方式）。
+**あなたの `~/.zshrc`（や `ZDOTDIR` の設定）はいつも通り読み込まれ、そちらの設定が優先されます。**
+
+### シェル統合（`shell-integration = true`）
+- カレントディレクトリの通知（OSC 7）→ 新しいタブ・分割が同じ場所で開く
+- プロンプト位置の記録（OSC 133）→ `Ctrl+Shift+↑/↓` でプロンプト間ジャンプ
+- ウィンドウ・タブのタイトルを実行中のコマンド / 現在のディレクトリにする
+
+### zsh プリセット（`shell-preset = true`）
+`.zshrc` がほぼ空でも、最初から快適に使えるようにします。
+
+| 機能 | 内容 |
+|---|---|
+| 入力候補 | 履歴から続きを薄く表示。`→` / `End` / `Ctrl+F` で確定（zsh-autosuggestions を使っていればそちらを優先） |
+| ハイライト | システムに zsh-syntax-highlighting があれば自動で読み込み。なければ内蔵版（存在するコマンドは緑、ないものは赤） |
+| 補完 | メニュー選択、大文字小文字を区別しない、部分一致、色付き、グループ表示 |
+| 履歴 | 10 万件、タブ間で共有、重複除去、スペース始まりは記録しない |
+| キー | `↑`/`↓` で入力中の文字から始まる履歴を検索、`Ctrl+←/→` で単語移動、`Ctrl+Backspace` で単語削除、`Home`/`End`/`Delete`、`Ctrl+X Ctrl+E` でエディタ編集 |
+| プロンプト | ディレクトリ、git ブランチと変更状態、3 秒以上かかったコマンドの所要時間、終了ステータスで色が変わる `❯`、右側に時刻とジョブ数 |
+| その他 | `auto_cd`（ディレクトリ名だけで移動）、`ll` / `la` / `..` などのエイリアス、zsh の初回設定ウィザードを出さない |
+
+プロンプトなどを自分の `.zshrc` で設定していれば、そちらが使われます。
 
 ## アニメーションとカスタムシェーダー
 
@@ -273,8 +304,10 @@ src/
 ├── width.odin             文字幅テーブル（East Asian Wide / 絵文字 / 結合文字）
 ├── platform_unix.odin     forkpty、Linux / macOS 固有の処理
 ├── platform_windows.odin  ConPTY
+├── shell_integration.odin シェル統合スクリプトの展開と zsh / bash への注入
 ├── watch_linux.odin       inotify による設定のホットリロード
 └── term_test.odin         テスト
+shell/                     zsh / bash の統合スクリプトとプリセット（バイナリに埋め込み）
 csrc/shim.c                FreeType / HarfBuzz / fontconfig / stb_image / zlib の薄い C ラッパー
 assets/                    アイコン、.desktop、スクリーンショット
 ```
@@ -295,7 +328,8 @@ odin test src -extra-linker-flags:"-L$(pwd)/lib"
 ## 既知の制限
 
 - macOS / Windows は実機未検証です（型チェックと C シムのクロスコンパイルは通っています）。Windows はデスクトップ通知と Kitty の共有メモリ転送に未対応です。
-- `background-opacity` で透過の有無を切り替えたときは、反映に再起動が必要です。
+- 背景のぼかし（blur）は未対応です（コンポジター側のプロトコルが必要）。
+- fish のシェル統合はありません（fish 自体が OSC 7 を出すので、ディレクトリ継承は動きます）。
 - 英数字だけの語は HarfBuzz を通さないため、`www` のような英字だけのリガチャは出ません（速度優先）。
 - 閉じたペインの端末状態はメモリを解放しません（読み取りスレッドとの競合を避けるため）。
 - 起動時の fastfetch は Unix 系のみです。

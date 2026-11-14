@@ -221,3 +221,23 @@ test_search :: proc(tt: ^testing.T) {
 	_, ok = search(t, needle, pos, -1)
 	testing.expect(tt, !ok)
 }
+
+@(test)
+test_shell_integration :: proc(tt: ^testing.T) {
+	saved := integration_ready
+	defer integration_ready = saved
+	integration_ready = true
+	argv, env := integrate({"/usr/bin/zsh"})
+	testing.expect_value(tt, len(argv), 1)
+	found := false
+	for e in env do if e[0] == "ZDOTDIR" do found = true
+	testing.expect(tt, found)
+	argv, env = integrate({"/bin/bash"})
+	testing.expect_value(tt, len(argv), 3)
+	testing.expect_value(tt, argv[1], "--rcfile")
+	argv, env = integrate({"/bin/bash", "-c", "true"}) // explicit args: untouched
+	testing.expect_value(tt, len(argv), 3)
+	testing.expect(tt, env == nil)
+	argv, env = integrate({"/usr/bin/fish"})
+	testing.expect(tt, env == nil)
+}

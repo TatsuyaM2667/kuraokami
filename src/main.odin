@@ -137,8 +137,8 @@ in_path :: proc(name: string) -> bool {
 	return false
 }
 
-shell_argv :: proc() -> []string {
-	if len(app.exec_argv) > 0 && len(app.tabs) == 0 do return app.exec_argv
+shell_argv :: proc() -> ([]string, [][2]string) {
+	if len(app.exec_argv) > 0 && len(app.tabs) == 0 do return app.exec_argv, nil
 	shell := cfg.shell
 	if shell == "" do shell = os.get_env("SHELL", context.temp_allocator)
 	when ODIN_OS == .Windows {
@@ -146,7 +146,7 @@ shell_argv :: proc() -> []string {
 	} else {
 		if shell == "" do shell = "/bin/sh"
 	}
-	argv := strings.fields(shell, context.temp_allocator)
+	argv, env := integrate(strings.fields(shell, context.temp_allocator))
 	// Built-in greeting: run fastfetch once in the first terminal, then exec the real shell.
 	when ODIN_OS != .Windows {
 		if !app.fetch_done && cfg.startup_fetch && len(app.exec_argv) == 0 {
@@ -157,11 +157,11 @@ shell_argv :: proc() -> []string {
 				// $0 = the shell itself so fastfetch reports the real shell
 				append(&out, "/bin/sh", "-c", fmt.tprintf("%s; exec \"$0\" \"$@\"", cfg.fetch_command))
 				append(&out, ..argv)
-				return out[:]
+				return out[:], env
 			}
 		}
 	}
-	return argv
+	return argv, env
 }
 
 new_term :: proc(cwd: string, argv: []string = nil) -> ^Term {
@@ -169,7 +169,10 @@ new_term :: proc(cwd: string, argv: []string = nil) -> ^Term {
 	t := new(Term)
 	t.cell_w, t.cell_h = fonts.cell_w, fonts.cell_h
 	term_init(t, cols, rows)
-	if !pty_spawn(t, cwd, argv if argv != nil else shell_argv()) {
+	args := argv
+	env: [][2]string
+	if args == nil do args, env = shell_argv()
+	if !pty_spawn(t, cwd, args, env) {
 		term_destroy(t)
 		free(t)
 		return nil
@@ -583,6 +586,9 @@ render :: proc() {
 		append(&out, fmt.tprintf("P6\n%d %d\n255\n", w, h))
 		for y := int(h) - 1; y >= 0; y -= 1 do append(&out, ..px[y * int(w) * 3:(y + 1) * int(w) * 3])
 		_ = os.write_entire_file(shot, out[:])
+		alpha: [4]u8
+		gl.ReadPixels(w - 1, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, &alpha[0])
+		fmt.eprintfln("kuraokami-shot: corner rgba=%v", alpha)
 	}
 	_ = sdl.GL_SwapWindow(app.window)
 	app.last_frame = app.now
@@ -786,7 +792,8 @@ SAMPLE_CONFIG :: `# kuraokami config (hot-reloaded on save)
 # font-family = JetBrainsMono Nerd Font Mono
 # font-size = 12
 # font-ligatures = true
-# background-opacity = 0.92
+# background-opacity = 0.85
+# shell-preset = true          # built-in zsh niceties (suggestions, highlighting, completion, prompt)
 # animation = true
 # cursor-blink = true
 # cursor-trail = true
@@ -1296,6 +1303,7 @@ main :: proc() {
 	}
 	platform_init()
 	errs := config_load()
+	install_shell_integration()
 	if kf_init() == 0 {fmt.eprintln("kuraokami: freetype/fontconfig init failed"); os.exit(1)}
 
 	_ = sdl.SetHint(sdl.HINT_KEYCODE_OPTIONS, "unmodified,latin_letters")
@@ -1312,8 +1320,8 @@ main :: proc() {
 	when ODIN_OS == .Darwin do _ = sdl.GL_SetAttribute(.CONTEXT_FLAGS, 2) // forward-compatible, required for core 3.3 on macOS
 	_ = sdl.GL_SetAttribute(.ALPHA_SIZE, 8)
 	_ = sdl.GL_SetAttribute(.DEPTH_SIZE, 0)
-	flags := sdl.WindowFlags{.OPENGL, .RESIZABLE, .HIGH_PIXEL_DENSITY}
-	if cfg.opacity < 1 do flags += {.TRANSPARENT}
+	// Always alpha-capable so background-opacity can change live on config reload.
+	flags := sdl.WindowFlags{.OPENGL, .RESIZABLE, .HIGH_PIXEL_DENSITY, .TRANSPARENT}
 	app.window = sdl.CreateWindow("kuraokami", 960, 600, flags)
 	if app.window == nil {fmt.eprintln("kuraokami: window:", sdl.GetError()); os.exit(1)}
 	glctx := sdl.GL_CreateContext(app.window)

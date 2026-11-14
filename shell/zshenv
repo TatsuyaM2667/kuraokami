@@ -1,0 +1,12 @@
+# kuraokami: injected via ZDOTDIR. Restore the user's ZDOTDIR first, then load their .zshenv as usual.
+if [[ -n ${KURAOKAMI_ORIG_ZDOTDIR+x} ]]; then
+  ZDOTDIR=$KURAOKAMI_ORIG_ZDOTDIR
+  unset KURAOKAMI_ORIG_ZDOTDIR
+else
+  unset ZDOTDIR
+fi
+_ko_integ=${KURAOKAMI_SHELL_DIR:-}/kuraokami.zsh
+[[ -f ${ZDOTDIR:-$HOME}/.zshenv ]] && source ${ZDOTDIR:-$HOME}/.zshenv
+# Interactive shells get the integration; it runs before .zshrc so the user's settings win.
+[[ -o interactive && -f $_ko_integ ]] && source $_ko_integ
+unset _ko_integ

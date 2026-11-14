@@ -47,7 +47,7 @@ utf16_encode :: proc(s: string) -> []u16 {
 	return buf[:n + 1]
 }
 
-pty_spawn :: proc(t: ^Term, cwd: string, argv: []string) -> bool {
+pty_spawn :: proc(t: ^Term, cwd: string, argv: []string, env: [][2]string = nil) -> bool {
 	in_r, in_w, out_r, out_w: win.HANDLE
 	if !win.CreatePipe(&in_r, &in_w, nil, 0) do return false
 	if !win.CreatePipe(&out_r, &out_w, nil, 0) do return false
