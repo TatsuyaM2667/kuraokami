@@ -792,7 +792,7 @@ SAMPLE_CONFIG :: `# kuraokami config (hot-reloaded on save)
 # font-family = JetBrainsMono Nerd Font Mono
 # font-size = 12
 # font-ligatures = true
-# background-opacity = 0.85
+# background-opacity = 0.7
 # shell-preset = true          # built-in zsh niceties (suggestions, highlighting, completion, prompt)
 # animation = true
 # cursor-blink = true
