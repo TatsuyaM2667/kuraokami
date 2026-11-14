@@ -1,16 +1,58 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#1a1b26"/><stop offset="1" stop-color="#2a1f4a"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#262038"/><stop offset="1" stop-color="#0f0c1a"/>
     </linearGradient>
-    <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0">
-      <stop offset="0" stop-color="#7dcfff"/><stop offset="1" stop-color="#bb9af7"/>
+    <radialGradient id="halo" cx="0.5" cy="0.55" r="0.5">
+      <stop offset="0" stop-color="#8b5cf6" stop-opacity="0.45"/><stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="f1" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e9ddff"/><stop offset="1" stop-color="#a78bfa"/>
     </linearGradient>
+    <linearGradient id="f2" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#a78bfa"/><stop offset="1" stop-color="#6d28d9"/>
+    </linearGradient>
+    <linearGradient id="f3" x1="0" y1="0" x2="0.3" y2="1">
+      <stop offset="0" stop-color="#7c3aed"/><stop offset="1" stop-color="#3b1585"/>
+    </linearGradient>
+    <linearGradient id="f4" x1="0" y1="0" x2="0.2" y2="1">
+      <stop offset="0" stop-color="#4c1d95"/><stop offset="1" stop-color="#1e0b4a"/>
+    </linearGradient>
+    <linearGradient id="f5" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5b21b6"/><stop offset="1" stop-color="#2a0f66"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.2" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
   </defs>
-  <rect x="6" y="6" width="116" height="116" rx="26" fill="url(#bg)"/>
-  <path d="M30 44 L54 64 L30 84" fill="none" stroke="url(#glow)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-  <rect x="62" y="78" width="36" height="9" rx="4.5" fill="#c0caf5"/>
-  <g stroke="#7aa2f7" stroke-width="3" stroke-linecap="round" opacity="0.7">
-    <path d="M84 24 l-5 12"/><path d="M98 30 l-5 12"/><path d="M106 48 l-5 12"/>
+
+  <rect x="4" y="4" width="120" height="120" rx="28" fill="url(#bg)"/>
+  <circle cx="64" cy="70" r="54" fill="url(#halo)"/>
+
+  <!-- faceted crystal -->
+  <g stroke-linejoin="round">
+    <polygon points="60,14 34,42 66,50" fill="url(#f1)"/>
+    <polygon points="60,14 66,50 94,37" fill="url(#f2)"/>
+    <polygon points="34,42 66,50 62,114 36,100" fill="url(#f3)"/>
+    <polygon points="66,50 94,37 92,96 62,114" fill="url(#f4)"/>
+    <polygon points="94,37 100,62 92,96" fill="url(#f2)" opacity="0.55"/>
+    <polygon points="66,50 94,37 80,70" fill="#8b5cf6" opacity="0.35"/>
+    <polygon points="34,42 36,100 28,78" fill="url(#f5)"/>
   </g>
+  <!-- ridge highlights -->
+  <g fill="none" stroke="#f5f0ff" stroke-linecap="round">
+    <path d="M60 14 L66 50 L62 114" stroke-width="1.1" opacity="0.55"/>
+    <path d="M34 42 L66 50 L94 37" stroke-width="1" opacity="0.45"/>
+    <path d="M60 14 L34 42" stroke-width="1.4" opacity="0.8"/>
+  </g>
+
+  <!-- terminal prompt etched into the crystal -->
+  <g filter="url(#glow)" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <path d="M44 70 L56 79 L44 88" stroke="#c4f1ff" stroke-width="5.5"/>
+    <path d="M62 92 L78 89" stroke="#c4f1ff" stroke-width="5.5"/>
+  </g>
+
+  <!-- sparkle -->
+  <path d="M98 22 l2.2 5.8 5.8 2.2 -5.8 2.2 -2.2 5.8 -2.2 -5.8 -5.8 -2.2 5.8 -2.2 z" fill="#efe7ff" opacity="0.9"/>
 </svg>
