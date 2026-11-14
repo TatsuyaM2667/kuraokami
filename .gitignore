@@ -1,0 +1,42 @@
+# Build outputs
+/kuraokami
+*.exe
+*.pdb
+*.o
+*.obj
+*.a
+*.lib
+*.dll
+*.so
+*.so.*
+/lib/
+a.out
+.odin-cache/
+.zig-cache/
+zig-out/
+
+# Debug frame dumps (KURAOKAMI_SHOT)
+*.ppm
+
+# Secrets / local settings — never commit
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+secrets*
+credentials*
+.netrc
+config.local
+/local/
+
+# Editor / OS noise
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db

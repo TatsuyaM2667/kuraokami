@@ -1,0 +1,20 @@
+[Desktop Entry]
+Type=Application
+Name=kuraokami
+GenericName=Terminal
+Comment=GPU-accelerated terminal emulator
+Comment[ja]=GPU描画の高速ターミナル
+Exec=kuraokami
+TryExec=kuraokami
+Icon=kuraokami
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=shell;prompt;command;commandline;terminal;
+StartupNotify=true
+StartupWMClass=kuraokami
+Actions=new-window;
+
+[Desktop Action new-window]
+Name=New Window
+Name[ja]=新しいウィンドウ
+Exec=kuraokami
