@@ -7,6 +7,7 @@ import "core:image/png"
 import "core:strconv"
 import "core:fmt"
 import "core:os"
+import "core:path/filepath"
 import "core:encoding/base64"
 
 Image :: struct {
@@ -93,6 +94,7 @@ parse_kitty_ctrl :: proc(s: string, k: ^Kitty_Ctrl) {
 		if len(kv) < 3 || kv[1] != '=' do continue
 		val := kv[2:]
 		n, _ := strconv.parse_int(val)
+		n = clamp(n, -(1 << 30), 1 << 30) // untrusted: keep products below int overflow
 		switch kv[0] {
 		case 'a': k.a = val[0]
 		case 't': k.t = val[0]
@@ -162,7 +164,7 @@ kitty_load :: proc(t: ^Term, k: ^Kitty_Ctrl, b64: []u8) -> (pixels: []u8, w, h: 
 	switch k.t {
 	case 'f', 't':
 		path := string(raw)
-		if k.t == 't' && !strings.contains(path, "tty-graphics-protocol") do return nil, 0, 0, "EPERM:temp file name"
+		if e := kitty_file_allowed(path, k.t == 't'); e != "" do return nil, 0, 0, e
 		bytes, rerr := os.read_entire_file_from_path(path, context.allocator)
 		if rerr != nil do return nil, 0, 0, "ENOENT:cannot read file"
 		owned = bytes
@@ -202,7 +204,7 @@ kitty_load :: proc(t: ^Term, k: ^Kitty_Ctrl, b64: []u8) -> (pixels: []u8, w, h: 
 		return out, img.width, img.height, ""
 	case 24, 32:
 		bpp := 3 if k.f == 24 else 4
-		if k.s <= 0 || k.v <= 0 || len(data) < k.s * k.v * bpp do return nil, 0, 0, "EINVAL:size"
+		if k.s <= 0 || k.v <= 0 || k.s > MAX_IMAGE_DIM || k.v > MAX_IMAGE_DIM || len(data) < k.s * k.v * bpp do return nil, 0, 0, "EINVAL:size"
 		out := make([]u8, k.s * k.v * 4)
 		if bpp == 4 do copy(out, data[:len(out)])
 		else do for i in 0 ..< k.s * k.v {
@@ -213,9 +215,34 @@ kitty_load :: proc(t: ^Term, k: ^Kitty_Ctrl, b64: []u8) -> (pixels: []u8, w, h: 
 	return nil, 0, 0, "EINVAL:format"
 }
 
+MAX_IMAGE_FILE :: 400 * 1024 * 1024
+
+// Escape sequences can come from untrusted output (ssh, cat of a file): only plain, bounded,
+// non-system files may be read, and t=t may only delete marked files directly inside a temp dir.
+kitty_file_allowed :: proc(path: string, temp: bool) -> string {
+	if !filepath.is_abs(path) do return "EPERM:path must be absolute"
+	clean, _ := filepath.clean(path, context.temp_allocator)
+	for p in ([?]string{"/proc/", "/sys/", "/dev/"}) do if strings.has_prefix(clean, p) && !strings.has_prefix(clean, "/dev/shm/") do return "EPERM:system path"
+	fi, err := os.stat(clean, context.temp_allocator)
+	if err != nil do return "ENOENT:cannot read file"
+	if fi.type != .Regular do return "EPERM:not a regular file"
+	if fi.size > MAX_IMAGE_FILE do return "EFBIG:file too large"
+	if temp {
+		if !strings.contains(filepath.base(clean), "tty-graphics-protocol") do return "EPERM:temp file name"
+		dir := filepath.dir(clean)
+		tmp := os.get_env("TMPDIR", context.temp_allocator)
+		tmp_clean, _ := filepath.clean(tmp, context.temp_allocator)
+		if dir != "/tmp" && dir != "/dev/shm" && (tmp == "" || dir != tmp_clean) do return "EPERM:not in a temp dir"
+	}
+	return ""
+}
+
+MAX_IMAGE_DIM :: 16384
+MAX_PLACE_CELLS :: 1000
+
 kitty_place :: proc(t: ^Term, k: ^Kitty_Ctrl, img: ^Image) {
 	g := &t.gfx
-	cols, rows := k.c, k.r
+	cols, rows := clamp(k.c, 0, MAX_PLACE_CELLS), clamp(k.r, 0, MAX_PLACE_CELLS)
 	cw, ch := max(t.cell_w, 1), max(t.cell_h, 1)
 	if cols == 0 && rows == 0 {
 		cols = (img.w + cw - 1) / cw
@@ -225,6 +252,7 @@ kitty_place :: proc(t: ^Term, k: ^Kitty_Ctrl, img: ^Image) {
 	} else if rows == 0 {
 		rows = max(1, (cols * cw * img.h / max(img.w, 1) + ch - 1) / ch)
 	}
+	cols, rows = clamp(cols, 1, MAX_PLACE_CELLS), clamp(rows, 1, MAX_PLACE_CELLS)
 	p := Placement{img = img.id, pid = k.p, abs_row = cursor_abs(t), col = t.cx, cols = cols, rows = rows, z = k.z}
 	replaced := false
 	for &e in g.placements {

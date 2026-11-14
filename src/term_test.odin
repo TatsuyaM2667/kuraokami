@@ -6,6 +6,7 @@ import "core:encoding/base64"
 import sdl "vendor:sdl3"
 import "core:image/png"
 import "core:bytes"
+import "core:os"
 
 line_text :: proc(t: ^Term, y: int) -> string {
 	b := strings.builder_make(context.temp_allocator)
@@ -278,4 +279,60 @@ test_png_roundtrip :: proc(tt: ^testing.T) {
 		testing.expect_value(tt, b[0], u8(0)) // top-left = last row of input = (0,0,255)
 		testing.expect_value(tt, b[2], u8(255))
 	}
+}
+
+@(test)
+test_security_kitty_files :: proc(tt: ^testing.T) {
+	t := mk(20, 5)
+	defer {term_destroy(t); free(t)}
+	b64 :: proc(s: string) -> string {e, _ := base64.encode(transmute([]u8)s, allocator = context.temp_allocator); return e}
+	// Device files must be refused (reading /dev/zero would never end).
+	feed(t, strings.concatenate({"\x1b_Ga=t,t=f,f=100,i=1;", b64("/dev/zero"), "\x1b\\"}, context.temp_allocator))
+	testing.expect(tt, strings.contains(string(t.reply[:]), "EPERM"))
+	clear(&t.reply)
+	// t=t outside a temp dir must neither be read nor deleted.
+	victim := "./tty-graphics-protocol-victim.txt"
+	_ = os.write_entire_file(victim, transmute([]u8)string("keep me"))
+	defer os.remove(victim)
+	abs, _ := os.get_absolute_path(victim, context.temp_allocator)
+	feed(t, strings.concatenate({"\x1b_Ga=t,t=t,f=100,i=2;", b64(abs), "\x1b\\"}, context.temp_allocator))
+	testing.expect(tt, strings.contains(string(t.reply[:]), "EPERM"))
+	testing.expect(tt, os.exists(victim))
+	clear(&t.reply)
+	// Relative paths are refused.
+	feed(t, strings.concatenate({"\x1b_Ga=t,t=f,f=100,i=3;", b64("etc/passwd"), "\x1b\\"}, context.temp_allocator))
+	testing.expect(tt, strings.contains(string(t.reply[:]), "EPERM"))
+}
+
+@(test)
+test_security_limits :: proc(tt: ^testing.T) {
+	t := mk(20, 5)
+	defer {term_destroy(t); free(t)}
+	// A huge placement must not loop for 2^30 lines.
+	px := [3]u8{1, 2, 3}
+	e, _ := base64.encode(px[:], allocator = context.temp_allocator)
+	feed(t, strings.concatenate({"\x1b_Ga=T,f=24,s=1,v=1,i=9,r=999999999,c=999999999;", e, "\x1b\\"}, context.temp_allocator))
+	testing.expect(tt, len(t.gfx.placements) == 1 && t.gfx.placements[0].rows <= MAX_PLACE_CELLS)
+	// Oversized dimensions are rejected instead of overflowing.
+	feed(t, "\x1b_Ga=t,f=32,s=99999999999,v=99999999999,i=10;AAAA\x1b\\")
+	_, ok := t.gfx.images[10]
+	testing.expect(tt, !ok)
+	// An unterminated OSC stops growing at the cap and is not executed.
+	big := strings.repeat("x", MAX_OSC + 1000, context.temp_allocator)
+	feed(t, "\x1b]2;")
+	feed(t, big)
+	feed(t, "\x07")
+	testing.expect(tt, len(t.strbuf) <= MAX_OSC)
+	testing.expect(tt, t.title == "")
+}
+
+@(test)
+test_security_urls :: proc(tt: ^testing.T) {
+	testing.expect(tt, url_allowed("https://example.com"))
+	testing.expect(tt, url_allowed("mailto:a@b.c"))
+	testing.expect(tt, !url_allowed("javascript:alert(1)"))
+	testing.expect(tt, !url_allowed("ssh://host"))
+	testing.expect(tt, url_allowed("file:///tmp"))
+	testing.expect(tt, !url_allowed("file:///usr/bin/sh"))      // executable
+	testing.expect(tt, !url_allowed("file:///x/evil.desktop"))  // launcher
 }

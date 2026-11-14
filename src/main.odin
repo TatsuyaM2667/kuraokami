@@ -70,6 +70,10 @@ App :: struct {
 	last_input:    f64,
 	toast:         string,
 	toast_time:    f64,
+	pending_paste: string, // multi-line paste waiting for confirmation
+	pending_paste_time: f64,
+	hover_url:     string, // link target shown while Ctrl is held over it
+	last_notify:   f64,
 }
 
 app: App
@@ -85,16 +89,27 @@ push_wake :: proc() {
 	_ = sdl.PushEvent(&ev)
 }
 
+// Frees the Term once both the UI and the reader thread are done with it.
+term_release :: proc(t: ^Term) {
+	if sync.atomic_sub(&t.refs, 1) == 1 {
+		term_destroy(t)
+		free(t)
+	}
+}
+
 reader_proc :: proc(t: ^Term) {
 	buf: [1 << 16]u8
 	out := make([dynamic]u8)
+	defer delete(out)
 	for {
-		n := pty_read(t, buf[:])
-		if n <= 0 {
+		// After the pane is closed its fd number may be reused by a new PTY: never read it again.
+		n := -1 if sync.atomic_load(&t.closing) else pty_read(t, buf[:])
+		if n <= 0 || sync.atomic_load(&t.closing) {
 			sync.mutex_lock(&t.mu)
 			t.exited = true
 			sync.mutex_unlock(&t.mu)
-			push_wake()
+			if !sync.atomic_load(&t.closing) do push_wake()
+			term_release(t)
 			return
 		}
 		sync.mutex_lock(&t.mu)
@@ -184,6 +199,7 @@ new_term :: proc(cwd: string, argv: []string = nil) -> ^Term {
 		free(t)
 		return nil
 	}
+	t.refs = 2 // UI + reader
 	thread.create_and_start_with_poly_data(t, reader_proc, context, self_cleanup = true)
 	return t
 }
@@ -237,8 +253,15 @@ first_leaf :: proc(n: ^Node) -> ^Node {
 close_leaf :: proc(tab: ^Tab, leaf: ^Node) -> bool {
 	t := leaf.term
 	if app.sel.term == t do app.sel = {}
+	sync.atomic_store(&t.closing, true)
 	pty_close(t)
-	// shortcut: the Term is not freed (the reader thread may still hold it); refcount if many panes churn.
+	// GPU textures belong to this (GL) thread: release them before the Term can be freed.
+	sync.mutex_lock(&t.mu)
+	for _, img in t.gfx.images do if img.tex != 0 {tex := img.tex; gl.DeleteTextures(1, &tex); img.tex = 0}
+	for tex in t.gfx.dead_tex {tex := tex; gl.DeleteTextures(1, &tex)}
+	clear(&t.gfx.dead_tex)
+	sync.mutex_unlock(&t.mu)
+	term_release(t)
 	p := leaf.parent
 	if p == nil {
 		free(leaf)
@@ -531,6 +554,10 @@ draw_overlay_ui :: proc(w, h: int) {
 		x := f32(leaf.rect.x + leaf.rect.w) - wpx - 8
 		draw_text(&ren.ov, x, f32(leaf.rect.y + 4), label, cfg.bg, mix(cfg.fg, cfg.cursor, 0.3))
 	}
+	if app.hover_url != "" {
+		label := truncate_cells(fmt.tprintf(" 🔗 %s ", app.hover_url), max(1, w / fonts.cell_w - 2))
+		draw_text(&ren.ov, 6, f32(h - fonts.cell_h - 6), label, cfg.fg, mix(cfg.bg, cfg.fg, 0.2))
+	}
 	if app.toast != "" {
 		age := app.now - app.toast_time
 		if age < 4.5 {
@@ -616,11 +643,25 @@ send :: proc(s: string) {
 
 paste :: proc(text: string) {
 	t := focused()
+	// Paste protection: without bracketed paste, a newline runs the command immediately.
+	// Ask for a second paste of the same text before sending it.
+	if cfg.paste_protection && !t.bracketed && strings.contains_any(text, "\r\n") {
+		if app.pending_paste != text || app.now - app.pending_paste_time > 5 {
+			delete(app.pending_paste)
+			app.pending_paste = strings.clone(text)
+			app.pending_paste_time = app.now
+			show_toast("改行を含む貼り付けです。実行するにはもう一度貼り付けてください")
+			return
+		}
+		delete(app.pending_paste)
+		app.pending_paste = ""
+	}
 	b := strings.builder_make(context.temp_allocator)
 	if t.bracketed do strings.write_string(&b, "\x1b[200~")
 	for i := 0; i < len(text); i += 1 {
 		ch := text[i]
-		if ch == 0x1b do continue // never let pasted text end the bracket or inject escapes
+		// Never let pasted text inject escapes/control keys (^C, ^Z, ESC ending the bracket...).
+		if (ch < 0x20 && ch != '\t' && ch != '\n' && ch != '\r') || ch == 0x7f do continue
 		if ch == '\r' && i + 1 < len(text) && text[i + 1] == '\n' do continue
 		strings.write_byte(&b, '\r' if ch == '\n' else ch)
 	}
@@ -1097,6 +1138,25 @@ selection_text :: proc() -> string {
 	return strings.to_string(sb)
 }
 
+// Links come from untrusted output (OSC 8 / text): only hand safe schemes to the system opener.
+// file:// is allowed for documents and directories, never for executables or .desktop launchers.
+url_allowed :: proc(u: string) -> bool {
+	lower := strings.to_lower(u, context.temp_allocator)
+	for s in ([?]string{"http://", "https://", "ftp://", "mailto:"}) do if strings.has_prefix(lower, s) do return true
+	if strings.has_prefix(lower, "file://") {
+		p := u[7:]
+		if i := strings.index_byte(p, '/'); i > 0 do p = p[i:] // file://host/path
+		p = percent_decode(p)
+		defer delete(p)
+		if strings.has_suffix(strings.to_lower(p, context.temp_allocator), ".desktop") do return false
+		fi, err := os.stat(p, context.temp_allocator)
+		if err != nil do return false
+		if fi.type == .Directory do return true
+		return fi.type == .Regular && transmute(u32)fi.mode & 0o111 == 0
+	}
+	return false
+}
+
 url_at :: proc(t: ^Term, x, y: int) -> string {
 	l := view_line(t, y)
 	if l == nil do return ""
@@ -1157,7 +1217,11 @@ on_mouse_button :: proc(e: sdl.MouseButtonEvent) {
 			sync.mutex_lock(&t.mu)
 			u := url_at(t, x, y)
 			sync.mutex_unlock(&t.mu)
-			if u != "" {_ = sdl.OpenURL(strings.clone_to_cstring(u, context.temp_allocator)); return}
+			if u != "" {
+				if url_allowed(u) do _ = sdl.OpenURL(strings.clone_to_cstring(u, context.temp_allocator))
+				else do show_toast(fmt.tprintf("このリンクは開きません: %s", u))
+				return
+			}
 		}
 		sync.mutex_lock(&t.mu)
 		abs := view_abs(t, y)
@@ -1178,6 +1242,21 @@ on_mouse_button :: proc(e: sdl.MouseButtonEvent) {
 on_mouse_motion :: proc(e: sdl.MouseMotionEvent) {
 	px, py := int(e.x * app.density), int(e.y * app.density)
 	app.mouse_px = {f32(px), f32(py)}
+	// Ctrl+hover shows where a link really goes (OSC 8 text can disguise its target).
+	hover := ""
+	if e.state == {} && sdl.GetModState() & (sdl.KMOD_CTRL | sdl.KMOD_GUI) != {} {
+		if n := pane_at(px, py); n != nil {
+			x, y := cell_at(n, px, py)
+			sync.mutex_lock(&n.term.mu)
+			hover = url_at(n.term, x, y)
+			sync.mutex_unlock(&n.term.mu)
+		}
+	}
+	if hover != app.hover_url {
+		delete(app.hover_url)
+		app.hover_url = strings.clone(hover)
+		app.redraw = true
+	}
 	if app.drag != nil {
 		n := app.drag
 		if n.vertical do n.ratio = clamp(f32(px - n.rect.x) / f32(max(n.rect.w, 1)), 0.1, 0.9)
@@ -1264,7 +1343,8 @@ process_wake :: proc() {
 			}
 			if t.clipboard_pending {
 				t.clipboard_pending = false
-				_ = sdl.SetClipboardText(strings.clone_to_cstring(t.clipboard_set, context.temp_allocator))
+				// OSC 52: programs (also remote ones over ssh) may set the clipboard only if allowed.
+				if cfg.clipboard_write do _ = sdl.SetClipboardText(strings.clone_to_cstring(t.clipboard_set, context.temp_allocator))
 			}
 			if t.bell {
 				t.bell = false
@@ -1274,7 +1354,11 @@ process_wake :: proc() {
 			for msg in t.notify {
 				title, body := "kuraokami", msg
 				if i := strings.index_byte(msg, ';'); i >= 0 do title, body = msg[:i], msg[i + 1:]
-				notify(title, body)
+				// Rate-limited: a program spamming OSC 9 must not flood the desktop.
+				if app.now - app.last_notify >= 1 {
+					notify(title, body)
+					app.last_notify = app.now
+				}
 				delete(msg)
 			}
 			clear(&t.notify)
@@ -1420,8 +1504,12 @@ handle_event :: proc(ev: ^sdl.Event) {
 	case .MOUSE_MOTION: on_mouse_motion(ev.motion)
 	case .MOUSE_WHEEL: on_wheel(ev.wheel)
 	case .DROP_FILE:
-		// Drag & drop a file: paste its shell-quoted path.
-		p := string(ev.drop.data)
-		paste(fmt.tprintf("'%s' ", strings.replace_all(p, "'", "'\\''", context.temp_allocator)))
+		// Drag & drop a file: paste its shell-quoted path. Control characters (a newline in a
+		// crafted file name would run a command) are replaced.
+		p := strings.clone(string(ev.drop.data), context.temp_allocator)
+		pb := transmute([]u8)p
+		for &c in pb do if c < 0x20 || c == 0x7f do c = '?'
+		q, _ := strings.replace_all(p, "'", "'\\''", context.temp_allocator)
+		paste(fmt.tprintf("'%s' ", q))
 	}
 }

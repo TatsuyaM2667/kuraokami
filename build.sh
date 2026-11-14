@@ -15,5 +15,6 @@ mkdir -p lib
 [ -e lib/libSDL3.so ] || ln -sf "$(ls /usr/lib/libSDL3.so* /usr/lib64/libSDL3.so* /usr/lib/*-linux-gnu/libSDL3.so* /opt/homebrew/lib/libSDL3*.dylib 2>/dev/null | head -1)" lib/libSDL3.so
 MODE=${1:-release}
 if [ "$MODE" = debug ]; then OPT="-debug -o:none"; else OPT="-o:speed -no-bounds-check"; fi
-odin build src -out:kuraokami $OPT -extra-linker-flags:"-L$(pwd)/lib"
+# Cap zlib/PNG output so a compressed image from the PTY cannot inflate into gigabytes.
+odin build src -out:kuraokami $OPT -define:COMPRESS_OUTPUT_ALLOCATE_MAX=268435456 -extra-linker-flags:"-L$(pwd)/lib"
 echo "built ./kuraokami ($(du -h kuraokami | cut -f1))"

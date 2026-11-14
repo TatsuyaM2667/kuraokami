@@ -138,6 +138,12 @@ shm_read :: proc(name: string, size: int) -> ([]u8, bool) {
 	when ODIN_OS == .Darwin do fd := posix.shm_open(cname, {})
 	else do fd := posix.shm_open(cname, {}, {})
 	if fd < 0 do return nil, false
+	// Mapping past the end of the object would SIGBUS the whole terminal: trust only its real size.
+	st: posix.stat_t
+	if posix.fstat(fd, &st) != .OK || int(st.st_size) < size || !posix.S_ISREG(st.st_mode) {
+		close(i32(fd))
+		return nil, false
+	}
 	ptr := posix.mmap(nil, uint(size), {.READ}, {.SHARED}, fd, 0)
 	close(i32(fd))
 	posix.shm_unlink(cname)

@@ -9,6 +9,6 @@ if not exist "%ODIN_ROOT%\vendor\kb_text_shape\lib\kb_text_shape.lib" (
   zig ar rcs "%ODIN_ROOT%\vendor\kb_text_shape\lib\kb_text_shape.lib" kb.obj || exit /b 1
   del kb.obj
 )
-odin build src -out:kuraokami.exe -o:speed -no-bounds-check -subsystem:windows -extra-linker-flags:"/LIBPATH:%FREETYPE_LIB%" || exit /b 1
+odin build src -out:kuraokami.exe -define:COMPRESS_OUTPUT_ALLOCATE_MAX=268435456 -o:speed -no-bounds-check -subsystem:windows -extra-linker-flags:"/LIBPATH:%FREETYPE_LIB%" || exit /b 1
 copy /y "%ODIN_ROOT%\vendor\sdl3\SDL3.dll" . >nul
 echo built kuraokami.exe

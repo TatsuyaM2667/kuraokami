@@ -33,6 +33,8 @@ Config :: struct {
 	startup_fetch:  bool,
 	shell_integration: bool,
 	shell_preset:   bool,
+	clipboard_write: bool,
+	paste_protection: bool,
 	fetch_command:  string,
 	binds:          [dynamic]Keybind,
 }
@@ -75,6 +77,8 @@ config_defaults :: proc() {
 		startup_fetch    = true,
 		shell_integration = true,
 		shell_preset     = true,
+		clipboard_write  = true,
+		paste_protection = true,
 		fetch_command    = "fastfetch",
 	}
 	binds_defaults()
@@ -173,6 +177,8 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 		case "startup-fetch": cfg.startup_fetch = parse_bool(v)
 		case "shell-integration": cfg.shell_integration = parse_bool(v)
 		case "shell-preset": cfg.shell_preset = parse_bool(v)
+		case "clipboard-write": cfg.clipboard_write = v == "allow" || parse_bool(v)
+		case "clipboard-paste-protection": cfg.paste_protection = parse_bool(v)
 		case "fetch-command": cfg.fetch_command = strings.clone(v)
 		case "keybind":
 			if v == "clear" do clear(&cfg.binds)

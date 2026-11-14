@@ -115,6 +115,7 @@ Term :: struct {
 	priv:            u8,
 	inter:           u8,
 	strbuf:          [dynamic]u8,
+	str_overflow:    bool, // sequence exceeded its cap: discard instead of executing
 	str_kind:        u8, // 'P' DCS, '_' APC, '^' PM, 'X' SOS
 	utf8buf:         [4]u8,
 	utf8len, utf8need: int,
@@ -127,6 +128,7 @@ Term :: struct {
 	bell:            bool,
 	notify:          [dynamic]string,
 	links:           [dynamic]string,
+	link_ids:        map[string]u16,
 	cur_link:        u16,
 	prompts:         [dynamic]i64,
 	palette:         [256]u32,
@@ -137,6 +139,8 @@ Term :: struct {
 	// io
 	pty:             Pty,
 	exited:          bool,
+	closing:         bool, // atomic: pane closed, the reader must stop touching the fd
+	refs:            i32,  // atomic: UI + reader thread; the last one to let go frees the Term
 	reply:           [dynamic]u8,
 }
 
@@ -179,6 +183,7 @@ term_destroy :: proc(t: ^Term) {
 	delete(t.clipboard_set)
 	for s in t.links do delete(s)
 	delete(t.links)
+	delete(t.link_ids)
 	for s in t.clusters do delete(s)
 	delete(t.clusters)
 	delete(t.cluster_ids)
@@ -606,7 +611,7 @@ term_feed :: proc(t: ^Term, data: []u8) {
 		case .Osc:
 			if b == 0x07 {osc_dispatch(t); t.state = .Ground}
 			else if b == 0x1b do t.state = .Osc_Esc
-			else do append(&t.strbuf, b)
+			else do str_push(t, b, MAX_OSC)
 		case .Osc_Esc:
 			osc_dispatch(t)
 			t.state = .Ground
@@ -614,11 +619,12 @@ term_feed :: proc(t: ^Term, data: []u8) {
 		case .Str:
 			if b == 0x1b do t.state = .Str_Esc
 			else if b == 0x07 && t.str_kind != 'P' {str_dispatch(t); t.state = .Ground}
-			else do append(&t.strbuf, b)
+			else do str_push(t, b, MAX_STR)
 		case .Str_Esc:
 			if b == '\\' {str_dispatch(t); t.state = .Ground}
 			else {
-				append(&t.strbuf, 0x1b, b)
+				str_push(t, 0x1b, MAX_STR)
+				str_push(t, b, MAX_STR)
 				t.state = .Str
 			}
 		}
@@ -664,9 +670,11 @@ esc_dispatch :: proc(t: ^Term, b: u8) {
 		t.state = .Csi
 	case ']':
 		clear(&t.strbuf)
+		t.str_overflow = false
 		t.state = .Osc
 	case 'P', '_', '^', 'X':
 		clear(&t.strbuf)
+		t.str_overflow = false
 		t.str_kind = b
 		t.state = .Str
 	case '(', ')', '*', '+', '#', '%', ' ':
@@ -1051,6 +1059,7 @@ color_reply :: proc(t: ^Term, code: int, c: u32) {
 }
 
 osc_dispatch :: proc(t: ^Term) {
+	if t.str_overflow do return
 	s := string(t.strbuf[:])
 	semi := strings.index_byte(s, ';')
 	code_s := s if semi < 0 else s[:semi]
@@ -1084,15 +1093,19 @@ osc_dispatch :: proc(t: ^Term) {
 	case 8:
 		i := strings.index_byte(rest, ';')
 		uri := "" if i < 0 else rest[i + 1:]
-		if uri == "" || len(t.links) >= 65535 do t.cur_link = 0
+		if uri == "" || len(uri) > 4096 do t.cur_link = 0
+		else if id, ok := t.link_ids[uri]; ok do t.cur_link = id // same URI reuses its id (ls --hyperlink repeats them)
+		else if len(t.links) >= 65535 do t.cur_link = 0
 		else {
-			append(&t.links, strings.clone(uri))
+			owned := strings.clone(uri)
+			append(&t.links, owned)
 			t.cur_link = u16(len(t.links) - 1)
+			t.link_ids[owned] = t.cur_link
 		}
 	case 9:
-		append(&t.notify, strings.clone(rest))
+		if len(t.notify) < 4 do append(&t.notify, strings.clone(rest[:min(len(rest), 512)]))
 	case 777:
-		if strings.has_prefix(rest, "notify;") do append(&t.notify, strings.clone(rest[7:]))
+		if strings.has_prefix(rest, "notify;") && len(t.notify) < 4 do append(&t.notify, strings.clone(rest[7:min(len(rest), 519)]))
 	case 10, 11, 12:
 		target := [3]^u32{&t.fg_color, &t.bg_color, &t.cursor_color}
 		p := target[code - 10]
@@ -1146,7 +1159,8 @@ percent_decode :: proc(s: string) -> string {
 
 str_dispatch :: proc(t: ^Term) {
 	s := t.strbuf[:]
-	switch t.str_kind {
+	if t.str_overflow do s = nil
+	if len(s) > 0 do switch t.str_kind {
 	case '_':
 		if len(s) > 0 && s[0] == 'G' do kitty_command(t, s[1:])
 	case 'P':
@@ -1260,4 +1274,13 @@ search :: proc(t: ^Term, needle: []rune, from: [2]i64, dir: int) -> ([2]i64, boo
 		}
 	}
 	return {}, false
+}
+
+// Caps for string sequences: an unterminated OSC/DCS/APC (e.g. `cat /dev/urandom`) must not grow forever.
+MAX_OSC :: 1 << 20 // 1 MiB: titles, colors, OSC 52 clipboard
+MAX_STR :: 64 << 20 // 64 MiB: sixel images, kitty graphics chunks
+
+str_push :: #force_inline proc(t: ^Term, b: u8, limit: int) {
+	if len(t.strbuf) >= limit {t.str_overflow = true; return}
+	append(&t.strbuf, b)
 }
