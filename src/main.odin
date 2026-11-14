@@ -577,15 +577,12 @@ render :: proc() {
 		})
 	}
 	if shot := os.get_env("KURAOKAMI_SHOT", context.temp_allocator); shot != "" {
-		// Debug aid: dump each frame as a PPM (used for headless visual checks).
+		// Debug aid: dump each frame as a PNG (used for headless visual checks).
 		gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
 		px := make([]u8, int(w) * int(h) * 3, context.temp_allocator)
 		gl.PixelStorei(gl.PACK_ALIGNMENT, 1)
 		gl.ReadPixels(0, 0, w, h, gl.RGB, gl.UNSIGNED_BYTE, raw_data(px))
-		out := make([dynamic]u8, context.temp_allocator)
-		append(&out, fmt.tprintf("P6\n%d %d\n255\n", w, h))
-		for y := int(h) - 1; y >= 0; y -= 1 do append(&out, ..px[y * int(w) * 3:(y + 1) * int(w) * 3])
-		_ = os.write_entire_file(shot, out[:])
+		_ = os.write_entire_file(shot, png_encode_rgb(px, int(w), int(h)))
 		alpha: [4]u8
 		gl.ReadPixels(w - 1, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, &alpha[0])
 		fmt.eprintfln("kuraokami-shot: corner rgba=%v", alpha)

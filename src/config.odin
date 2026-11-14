@@ -51,7 +51,7 @@ config_mtime: time.Time
 config_defaults :: proc() {
 	delete(cfg.binds)
 	cfg = Config {
-		font_family      = "JetBrains Mono",
+		font_family      = "JetBrains Mono, JetBrainsMono Nerd Font Mono, JetBrainsMono Nerd Font, monospace",
 		font_size        = 12,
 		ligatures        = true,
 		fg               = 0xcdd6f4,

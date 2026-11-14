@@ -4,6 +4,8 @@ import "core:testing"
 import "core:strings"
 import "core:encoding/base64"
 import sdl "vendor:sdl3"
+import "core:image/png"
+import "core:bytes"
 
 line_text :: proc(t: ^Term, y: int) -> string {
 	b := strings.builder_make(context.temp_allocator)
@@ -240,4 +242,40 @@ test_shell_integration :: proc(tt: ^testing.T) {
 	testing.expect(tt, env == nil)
 	argv, env = integrate({"/usr/bin/fish"})
 	testing.expect(tt, env == nil)
+}
+
+@(test)
+test_freetype_layout :: proc(tt: ^testing.T) {
+	// Offsets measured from the system FreeType headers (x86_64 LP64).
+	when ODIN_OS == .Linux && ODIN_ARCH == .amd64 {
+		testing.expect_value(tt, offset_of(FT_FaceRec, face_flags), uintptr(16))
+		testing.expect_value(tt, offset_of(FT_FaceRec, num_fixed_sizes), uintptr(56))
+		testing.expect_value(tt, offset_of(FT_FaceRec, available_sizes), uintptr(64))
+		testing.expect_value(tt, offset_of(FT_FaceRec, units_per_EM), uintptr(136))
+		testing.expect_value(tt, offset_of(FT_FaceRec, glyph), uintptr(152))
+		testing.expect_value(tt, offset_of(FT_FaceRec, size), uintptr(160))
+		testing.expect_value(tt, offset_of(FT_SizeRec, metrics), uintptr(24))
+		testing.expect_value(tt, offset_of(FT_Size_Metrics, ascender), uintptr(24))
+		testing.expect_value(tt, offset_of(FT_GlyphSlotRec, advance), uintptr(128))
+		testing.expect_value(tt, offset_of(FT_GlyphSlotRec, bitmap), uintptr(152))
+		testing.expect_value(tt, offset_of(FT_GlyphSlotRec, bitmap_left), uintptr(192))
+		testing.expect_value(tt, offset_of(FT_Bitmap, buffer), uintptr(16))
+		testing.expect_value(tt, offset_of(FT_Bitmap, pixel_mode), uintptr(26))
+		testing.expect_value(tt, size_of(FT_Bitmap_Size), 32)
+	}
+}
+
+@(test)
+test_png_roundtrip :: proc(tt: ^testing.T) {
+	px := [12]u8{255, 0, 0, 0, 255, 0, 0, 0, 255, 9, 8, 7} // 2x2, bottom-up
+	data := png_encode_rgb(px[:], 2, 2)
+	img, err := png.load_from_bytes(data)
+	testing.expect(tt, err == nil)
+	if err == nil {
+		defer png.destroy(img)
+		b := bytes.buffer_to_bytes(&img.pixels)
+		testing.expect_value(tt, img.width, 2)
+		testing.expect_value(tt, b[0], u8(0)) // top-left = last row of input = (0,0,255)
+		testing.expect_value(tt, b[2], u8(255))
+	}
 }

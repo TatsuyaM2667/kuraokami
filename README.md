@@ -6,7 +6,7 @@
 
 **軽量・高速・省電力、そしてアニメーションに全振りした GPU ターミナルエミュレーター**
 
-Odin + SDL3 + OpenGL 3.3 + FreeType / HarfBuzz ・ バイナリ約 630 KB ・ アイドル時 CPU 0%
+本体はすべて Odin（C/C++ のソースなし）・ SDL3 + OpenGL 3.3 + FreeType ・ アイドル時 CPU 0%
 
 *A tiny, fast, power-friendly, animation-focused GPU terminal emulator written in Odin.*
 
@@ -41,8 +41,8 @@ Odin + SDL3 + OpenGL 3.3 + FreeType / HarfBuzz ・ バイナリ約 630 KB ・ �
 
 | | |
 |---|---|
-| ⚡ **速い** | 50 MB のテキスト出力を約 0.84 秒で処理。描画は PTY 読み取りと並行して行うので、出力が詰まらない |
-| 🪶 **軽い** | 単一バイナリ約 630 KB。外部ランタイムなし |
+| ⚡ **速い** | 50 MB のテキスト出力を約 0.80 秒で処理。描画は PTY 読み取りと並行して行うので、出力が詰まらない |
+| 🪶 **軽い** | 単一バイナリ約 1.9 MB（シェーパーとUnicodeテーブル込み）。直接依存は SDL3・FreeType・fontconfig・libc だけ。C++ / Python / JVM は一切不使用 |
 | 🔋 **省電力** | タイマーもポーリングもなし。何も起きていないときは完全にスリープ（カーソル点滅も 30 秒無操作で停止 → CPU 0）。アニメーションは動いている間だけ vsync で描画 |
 | ✨ **アニメーション** | カーソルのスライドと残像、フェード点滅、スムーススクロール、タブのスライド、Ghostty 互換カスタムシェーダー |
 | 🖼️ **画像・動画** | Kitty graphics protocol（`mpv --vo=kitty` で動画再生）と Sixel |
@@ -74,8 +74,8 @@ kuraokami --version
 
 | | Linux | macOS | Windows |
 |---|---|---|---|
-| コンパイラ | [Odin](https://odin-lang.org/)（dev-2026-08 で確認）、gcc/clang | Odin、clang | Odin、MSVC |
-| ライブラリ | SDL3, freetype2, harfbuzz, fontconfig, zlib, OpenGL 3.3 | Homebrew: `sdl3 freetype harfbuzz fontconfig pkg-config` | vcpkg: `freetype harfbuzz zlib`（SDL3.dll は Odin 同梱） |
+| ツール | [Odin](https://odin-lang.org/)（dev-2026-08 で確認）、[Zig](https://ziglang.org/)（0.17 で確認） | Odin、Zig | Odin、Zig |
+| ライブラリ | SDL3, freetype2, fontconfig, OpenGL 3.3 | Homebrew: `sdl3 freetype fontconfig` | vcpkg: `freetype`（SDL3.dll は Odin 同梱） |
 | 手順 | `./build.sh` | `./build.sh` | Developer Prompt で `build.bat` |
 
 ```sh
@@ -83,9 +83,10 @@ kuraokami --version
 ./build.sh debug    # デバッグビルド
 ```
 
-ビルドは C シム（`csrc/shim.c`）を静的ライブラリにしてから Odin 本体をリンクします。
+本体はすべて Odin で書かれています。FreeType と fontconfig も Odin から直接呼び出しています（構造体レイアウトはテストで検証）。
+Zig は、Odin 同梱のテキストシェーパー `vendor:kb_text_shape` を最初に一度だけビルドするための C コンパイラ（`zig cc`）としてだけ使います。
 
-> **注意:** 動作確認済みなのは Linux（Wayland / X11）だけです。macOS / Windows は型チェックと C シムのクロスコンパイルまでしか確認していません（PR 歓迎）。
+> **注意:** 動作確認済みなのは Linux（Wayland / X11）だけです。macOS / Windows は型チェックまでしか確認していません（PR 歓迎）。
 
 ## 機能一覧
 
@@ -94,7 +95,7 @@ kuraokami --version
 - 代替画面、スクロール領域、行・文字の挿入削除、DEC 罫線文字セット、タブストップ、DECSCUSR（カーソル形状）
 - **リフロー**: リサイズするとソフト折り返し行を再計算（全角文字は行をまたがない、カーソル位置追従）
 - **書記素クラスタ**: 結合文字（é）、ZWJ 絵文字（👨‍👩‍👧）、国旗（🇯🇵）、肌色修飾（👍🏽）
-- **リガチャ**: HarfBuzz によるシェーピング（`->` `=>` `!=` `===` など）
+- **リガチャ**: Odin 同梱の kb_text_shape による OpenType シェーピング（`->` `=>` `!=` `===` など）
 - スクロールバック（既定 10,000 行）、**スクロールバック検索**（全一致ハイライト・件数表示）
 - **Kitty キーボードプロトコル**（disambiguate / イベント種別 / 全キーエスケープ / 関連テキスト）
 - マウス: 文字・単語（ダブル）・行（トリプル、折り返し行ごと）選択、copy-on-select、中クリック貼り付け、Ctrl+クリックで URL / OSC 8 リンクを開く、マウスレポート（1000/1002/1003/SGR 1006）
@@ -163,7 +164,7 @@ keybind = ctrl+shift+d=split_right
 | キー | 既定値 | 説明 |
 |---|---|---|
 | `theme` | — | 組込テーマ名、または `~/.config/kuraokami/themes/<名前>` |
-| `font-family` | `JetBrains Mono` | fontconfig のファミリ名（Windows は `C:\Windows\Fonts` 内のファイル名） |
+| `font-family` | `JetBrains Mono, JetBrainsMono Nerd Font Mono, JetBrainsMono Nerd Font, monospace` | カンマ区切りの候補リスト。実際にインストールされている最初のフォントを使う（Windows は `C:\Windows\Fonts` 内のファイル名） |
 | `font-size` | `12` | ポイント |
 | `font-ligatures` | `true` | リガチャの有効・無効 |
 | `foreground` / `background` | `#cdd6f4` / `#060913` | 文字色 / 背景色 |
@@ -286,16 +287,16 @@ Linux（AMD Ryzen 7 7735HS / Radeon 680M、Wayland）での実測値:
 
 | 項目 | 結果 |
 |---|---|
-| 50 MB（40 万行、色・日本語混じり）の `cat` | **約 0.84 秒** |
+| 50 MB（40 万行、色・日本語混じり）の `cat` | **約 0.80 秒** |
 | パーサー単体 | 約 63 MB/秒 |
 | アイドル時 CPU（点滅停止後） | **0 tick / 5 秒** |
 | メモリ（RSS） | 約 94 MB（大半は Mesa の GL ドライバと fontconfig のキャッシュ） |
-| バイナリサイズ | 約 630 KB |
+| バイナリサイズ | 約 1.9 MB |
 
 省電力と速さのための工夫:
 - イベントを待つ間はブロックし、タイマーもポーリングもしない
 - 描画時はロック中に表示範囲だけをコピーし、シェーピングと描画はロックの外で行う（PTY の読み取りを止めない）
-- ASCII 専用の高速パス、HarfBuzz の結果キャッシュ、英数字だけの語はシェーピングを省略
+- ASCII 専用の高速パス、シェーピング結果とグリフ番号のキャッシュ、英数字だけの語はシェーピングを省略
 - 設定監視は inotify（Linux）で、待っている間は CPU を使わない
 
 ## アーキテクチャ
@@ -304,7 +305,9 @@ Linux（AMD Ryzen 7 7735HS / Radeon 680M、Wayland）での実測値:
 src/
 ├── main.odin              アプリ本体: イベントループ、タブ・分割、入力、選択、検索、アニメーション
 ├── term.odin              VT パーサー、画面バッファ（リングバッファ）、リフロー、書記素、Kitty キーボード、検索
-├── render.odin            フォントアトラス、HarfBuzz シェーピング、OpenGL 描画、ポストエフェクト、内蔵シェーダー
+├── render.odin            フォントアトラス、シェーピング結果のキャッシュ、OpenGL 描画、ポストエフェクト、内蔵シェーダー
+├── font_backend.odin      FreeType / fontconfig の Odin バインディング、kb_text_shape によるシェーピング
+├── png_write.odin         デバッグ用の最小 PNG 書き出し
 ├── graphics.odin          Kitty graphics protocol、Sixel デコーダー
 ├── keys.odin              キーバインド、Kitty キーボードプロトコルのエンコード
 ├── config.odin            設定パーサー、組込テーマ
@@ -315,12 +318,11 @@ src/
 ├── watch_linux.odin       inotify による設定のホットリロード
 └── term_test.odin         テスト
 shell/                     zsh / bash の統合スクリプトとプリセット（バイナリに埋め込み）
-csrc/shim.c                FreeType / HarfBuzz / fontconfig / stb_image / zlib の薄い C ラッパー
 assets/                    アイコン、.desktop、スクリーンショット
 ```
 
 - **スレッド構成:** PTY ごとに読み取りスレッドが 1 本あり、パースして端末状態を更新します。描画は UI スレッドで行い、状態のコピー中だけロックを取ります。
-- **C シムを挟む理由:** FreeType / HarfBuzz の構造体レイアウトを Odin 側で再現しないで済むよう、平坦な C ABI だけを公開しています。
+- **言語:** アプリはすべて Odin です。PNG の読み込みと zlib の展開も Odin の標準ライブラリ（`core:image/png`、`core:compress/zlib`）を使っています。C++ / Python / JVM には依存していません。
 
 ## テスト
 
@@ -334,10 +336,10 @@ odin test src -extra-linker-flags:"-L$(pwd)/lib"
 
 ## 既知の制限
 
-- macOS / Windows は実機未検証です（型チェックと C シムのクロスコンパイルは通っています）。Windows はデスクトップ通知と Kitty の共有メモリ転送に未対応です。
+- macOS / Windows は実機未検証です（型チェックは通っています）。Windows はデスクトップ通知と Kitty の共有メモリ転送に未対応です。
 - 背景のぼかし（blur）は未対応です（コンポジター側のプロトコルが必要）。
 - fish のシェル統合はありません（fish 自体が OSC 7 を出すので、ディレクトリ継承は動きます）。
-- 英数字だけの語は HarfBuzz を通さないため、`www` のような英字だけのリガチャは出ません（速度優先）。
+- 英数字だけの語はシェーパーを通さないため、`www` のような英字だけのリガチャは出ません（速度優先）。
 - 閉じたペインの端末状態はメモリを解放しません（読み取りスレッドとの競合を避けるため）。
 - 起動時の fastfetch は Unix 系のみです。
 
@@ -348,9 +350,8 @@ odin test src -extra-linker-flags:"-L$(pwd)/lib"
 使用ライブラリ:
 - [SDL3](https://libsdl.org/)（zlib License）
 - [FreeType](https://freetype.org/)（FTL / GPLv2）
-- [HarfBuzz](https://harfbuzz.github.io/)（MIT）
+- [kb_text_shape](https://github.com/JimmyLefevre/kb)（zlib License、Odin の `vendor:kb_text_shape` として同梱）
 - [fontconfig](https://www.freedesktop.org/wiki/Software/fontconfig/)（MIT 系）
-- [zlib](https://zlib.net/)（zlib License）
-- [stb_image](https://github.com/nothings/stb)（Public Domain / MIT、`csrc/stb_image.h` に同梱）
+- [Odin 標準ライブラリ](https://odin-lang.org/)（PNG / zlib / base64 など、zlib License）
 
 内蔵テーマの配色は [Tokyo Night](https://github.com/folke/tokyonight.nvim)、[Catppuccin](https://github.com/catppuccin/catppuccin)、[Dracula](https://draculatheme.com/)、[Gruvbox](https://github.com/morhetz/gruvbox)、[Nord](https://www.nordtheme.com/)、[Solarized](https://ethanschoonover.com/solarized/) に基づいています。

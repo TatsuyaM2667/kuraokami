@@ -1,7 +1,9 @@
 package kuraokami
 
 import "core:strings"
-import "core:c"
+import "core:bytes"
+import "core:compress/zlib"
+import "core:image/png"
 import "core:strconv"
 import "core:fmt"
 import "core:os"
@@ -178,25 +180,26 @@ kitty_load :: proc(t: ^Term, k: ^Kitty_Ctrl, b64: []u8) -> (pixels: []u8, w, h: 
 		data = owned
 	}
 	if k.o == 'z' {
-		out: [^]u8
-		n := kf_inflate(raw_data(data), c.long(len(data)), &out)
-		if n < 0 do return nil, 0, 0, "EINVAL:zlib"
-		inflated := make([]u8, n)
-		copy(inflated, out[:n])
-		kf_free(out)
+		buf: bytes.Buffer
+		if zlib.inflate(data, &buf) != nil {bytes.buffer_destroy(&buf); return nil, 0, 0, "EINVAL:zlib"}
+		inflated := bytes.buffer_to_bytes(&buf)
 		if owned != nil do delete(owned)
 		owned = inflated
 		data = inflated
 	}
 	switch k.f {
 	case 100:
-		iw, ih: i32
-		px := kf_image_decode(raw_data(data), i32(len(data)), &iw, &ih)
-		if px == nil do return nil, 0, 0, "EBADPNG:decode failed"
-		out := make([]u8, int(iw) * int(ih) * 4)
-		copy(out, px[:len(out)])
-		kf_free(px)
-		return out, int(iw), int(ih), ""
+		img, err := png.load_from_bytes(data, {.alpha_add_if_missing})
+		if err != nil do return nil, 0, 0, "EBADPNG:decode failed"
+		defer png.destroy(img)
+		src := bytes.buffer_to_bytes(&img.pixels)
+		n := img.width * img.height
+		if img.channels != 4 || len(src) < n * 4 * (img.depth / 8) do return nil, 0, 0, "EBADPNG:format"
+		out := make([]u8, n * 4)
+		if img.depth == 16 { // keep the high byte of each big-endian 16-bit sample
+			for i in 0 ..< n * 4 do out[i] = src[i * 2 + 1] if ODIN_ENDIAN == .Little else src[i * 2]
+		} else do copy(out, src[:n * 4])
+		return out, img.width, img.height, ""
 	case 24, 32:
 		bpp := 3 if k.f == 24 else 4
 		if k.s <= 0 || k.v <= 0 || len(data) < k.s * k.v * bpp do return nil, 0, 0, "EINVAL:size"

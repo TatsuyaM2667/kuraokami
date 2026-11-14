@@ -61,10 +61,10 @@ Renderer :: struct {
 fonts: Fonts
 ren: Renderer
 
-find_font :: proc(family: string, bold, italic: bool, cp: u32 = 0) -> string {
+find_font :: proc(family: string, bold, italic: bool, cp: u32 = 0, strict := false) -> string {
 	buf: [1024]u8
 	fam := strings.clone_to_cstring(family, context.temp_allocator)
-	if kf_find(fam, c.int(bold), c.int(italic), cp, &buf[0], len(buf)) == 0 do return ""
+	if kf_find(fam, c.int(bold), c.int(italic), cp, &buf[0], len(buf), strict) == 0 do return ""
 	return strings.clone(string(cstring(&buf[0])))
 }
 
@@ -77,8 +77,7 @@ fonts_load :: proc(px: int) {
 	clear(&fonts.fb_cache)
 	fonts.px = px
 	for i in 0 ..< 4 {
-		path := find_font(cfg.font_family, i & 1 != 0, i & 2 != 0)
-		if path == "" && i == 0 do path = find_font("monospace", false, false)
+		path := find_family_list(cfg.font_family, i & 1 != 0, i & 2 != 0)
 		f: rawptr
 		if path != "" {
 			f = kf_open(strings.clone_to_cstring(path, context.temp_allocator), c.int(px))
@@ -831,4 +830,17 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 	float glow = exp(-d / (iCurrentCursor.w * 1.6 * pulse)) * 0.35;
 	fragColor = vec4(term.rgb + iCurrentCursorColor.rgb * glow, term.a);
 }`},
+}
+
+// font-family may be a comma-separated list: the first family that is really installed wins
+// (the last entry, or "monospace", is accepted as whatever fontconfig substitutes).
+find_family_list :: proc(list: string, bold, italic: bool) -> string {
+	names := strings.split(list, ",", context.temp_allocator)
+	for name, i in names {
+		n := strings.trim_space(name)
+		if n == "" do continue
+		last := i == len(names) - 1 || n == "monospace"
+		if p := find_font(n, bold, italic, 0, !last); p != "" do return p
+	}
+	return find_font("monospace", bold, italic)
 }
