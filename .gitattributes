@@ -1,0 +1,5 @@
+# Language stats for GitHub (linguist)
+*.odin linguist-language=Odin
+shell/zshenv linguist-language=Shell
+*.zsh linguist-language=Shell
+*.bash linguist-language=Shell
