@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=kuraokami Quick
+Name[ja]=kuraokami クイックターミナル
+Comment=Show or hide the kuraokami quick terminal
+Comment[ja]=すぐ出し入れできる小さなターミナル(もう一度起動すると隠れる)
+Exec=kuraokami --quick
+TryExec=kuraokami
+Icon=kuraokami
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=quick;dropdown;terminal;
+StartupNotify=false

@@ -10,6 +10,10 @@ sed "s|^Exec=kuraokami|Exec=$PREFIX/bin/kuraokami|; s|^TryExec=kuraokami|TryExec
     assets/kuraokami.desktop > /tmp/kuraokami.desktop.$$
 install -Dm644 /tmp/kuraokami.desktop.$$ "$PREFIX/share/applications/kuraokami.desktop"
 rm -f /tmp/kuraokami.desktop.$$
+sed "s|^Exec=kuraokami|Exec=$PREFIX/bin/kuraokami|; s|^TryExec=kuraokami|TryExec=$PREFIX/bin/kuraokami|" \
+    assets/kuraokami-quick.desktop > /tmp/kuraokami-quick.desktop.$$
+install -Dm644 /tmp/kuraokami-quick.desktop.$$ "$PREFIX/share/applications/kuraokami-quick.desktop"
+rm -f /tmp/kuraokami-quick.desktop.$$
 command -v update-desktop-database >/dev/null && update-desktop-database -q "$PREFIX/share/applications" || true
 command -v gtk-update-icon-cache >/dev/null && gtk-update-icon-cache -q -t "$PREFIX/share/icons/hicolor" || true
 echo "installed: $PREFIX/bin/kuraokami (+ launcher entry and icon)"

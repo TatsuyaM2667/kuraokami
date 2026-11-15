@@ -7,6 +7,7 @@ import sdl "vendor:sdl3"
 import "core:image/png"
 import "core:bytes"
 import "core:os"
+import "core:unicode/utf8"
 
 line_text :: proc(t: ^Term, y: int) -> string {
 	b := strings.builder_make(context.temp_allocator)
@@ -335,4 +336,22 @@ test_security_urls :: proc(tt: ^testing.T) {
 	testing.expect(tt, url_allowed("file:///tmp"))
 	testing.expect(tt, !url_allowed("file:///usr/bin/sh"))      // executable
 	testing.expect(tt, !url_allowed("file:///x/evil.desktop"))  // launcher
+}
+
+@(test)
+test_palette_and_cmd_done :: proc(tt: ^testing.T) {
+	q :: proc(s: string) -> []rune {return utf8.string_to_runes(s, context.temp_allocator)}
+	split := Palette_Item{label = "右に分割", kind = .Action, action = .Split_Right}
+	testing.expect(tt, palette_match(split, q("右分")))        // Japanese subsequence
+	testing.expect(tt, palette_match(split, q("split")))      // English action name
+	testing.expect(tt, !palette_match(split, q("theme")))
+	testing.expect(tt, palette_match(Palette_Item{label = "テーマ: dracula", kind = .Theme}, q("drc")))
+	// OSC 133 C/D produce a finished-command record with the exit status.
+	t := mk(10, 2)
+	defer {term_destroy(t); free(t)}
+	feed(t, "\x1b]133;C\x07\x1b]133;D;3\x07")
+	testing.expect(tt, t.cmd_done.pending)
+	testing.expect_value(tt, t.cmd_done.status, 3)
+	feed(t, "\x1b]133;D;0\x07") // D without C is ignored
+	testing.expect_value(tt, t.cmd_done.status, 3)
 }

@@ -26,6 +26,7 @@
 - [機能一覧](#機能一覧)
 - [キーバインド](#キーバインド)
 - [設定](#設定)
+- [クイックターミナル](#クイックターミナル)
 - [シェル統合と zsh プリセット](#シェル統合と-zsh-プリセット)
 - [アニメーションとカスタムシェーダー](#アニメーションとカスタムシェーダー)
 - [画像・動画の表示](#画像動画の表示)
@@ -107,6 +108,11 @@ Zig は、Odin 同梱のテキストシェーパー `vendor:kb_text_shape` を�
 - IME のインライン変換表示、ファイルのドラッグ&ドロップでパスを貼り付け
 - 背景透過、HiDPI、フルスクリーン、ベル時のウィンドウ点滅と画面フラッシュ
 - **設定のホットリロード**（保存した瞬間に反映。エラーは画面下にトースト表示）
+- **コマンドパレット**（`Ctrl+Shift+P`）: すべての操作・タブ・テーマ・シェーダーをあいまい検索して実行（日本語でも英語のアクション名でも引ける）
+- **長いコマンドの完了通知**: 10 秒以上かかったコマンドが終わったとき、kuraokami を見ていなければ成功 / 失敗と所要時間をデスクトップに通知
+- **セッションの復元**: ウィンドウを閉じるとタブ・分割・各ペインのディレクトリを保存し、次の起動で元に戻す（シェルを全部 `exit` して終えたときは新規）
+- **クイックターミナル**: [下記](#クイックターミナル)
+- 巨大な貼り付けでも画面が固まらない（ペインごとの書き込みスレッド）
 
 ### シェル連携（OSC）
 | OSC | 内容 |
@@ -141,6 +147,7 @@ Zig は、Odin 同梱のテキストシェーパー `vendor:kb_text_shape` を�
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | フォントサイズ 拡大 / 縮小 / 元に戻す |
 | `Ctrl+Shift+,` / `Ctrl+Shift+R` | 設定ファイルを開く / 再読み込み |
 | `F11` | フルスクリーン |
+| `Ctrl+Shift+P` | コマンドパレット（`↑`/`↓` で選択、`Enter` で実行、`Esc` で閉じる） |
 | タブバーを中クリック | タブを閉じる |
 
 macOS では `Cmd+C` / `Cmd+V` / `Cmd+T` / `Cmd+W` / `Cmd+D` なども使えます。
@@ -192,6 +199,9 @@ keybind = ctrl+shift+d=split_right
 | `copy-on-select` | `true` | 選択したら PRIMARY にコピー |
 | `clipboard-write` | `allow` | プログラム（ssh 先も含む）が OSC 52 でクリップボードに書き込むのを許可するか（`deny` で禁止） |
 | `clipboard-paste-protection` | `true` | 改行を含む貼り付けを、ブラケットペースト非対応のプログラムに送る前にもう一度確認する |
+| `notify-on-command-finish-after` | `10` | この秒数以上かかったコマンドの完了を通知（`0` で無効。シェル統合が必要） |
+| `restore-session` | `true` | タブ・分割・ディレクトリを保存して次回復元する |
+| `quick-terminal-autohide` | `true` | クイックターミナルが他の窓に切り替わったら自動で隠れる |
 | `keybind` | — | 下記参照（複数行で指定可） |
 
 ### 組込テーマ
@@ -218,7 +228,17 @@ keybind = clear                      # 既定のバインドを全部消す
 `resize_left` `resize_right` `resize_up` `resize_down` `equalize_splits`
 `scroll_page_up` `scroll_page_down` `scroll_top` `scroll_bottom` `prompt_prev` `prompt_next`
 `font_inc` `font_dec` `font_reset` `open_config` `reload_config` `search` `clear_scrollback`
-`toggle_fullscreen` `unbind`
+`toggle_fullscreen` `command_palette` `unbind`
+
+## クイックターミナル
+
+`kuraokami --quick` を実行するたびに、小さな浮いたターミナルが出たり隠れたりします（中のシェルはそのまま生き続けます）。
+ほかの窓に切り替えると自動で隠れます（`quick-terminal-autohide = false` で無効）。
+
+- ランチャーから: 「kuraokami Quick」、または kuraokami の右クリックメニューの「クイックターミナル」
+- キー 1 つで呼びたい場合: お使いのコンポジター / ウィンドウマネージャで `kuraokami --quick` をキーに割り当ててください
+  （例: River 0.4 なら `riverctl map normal Super grave spawn "kuraokami --quick"`、sway なら `bindsym $mod+grave exec kuraokami --quick`）
+- Wayland ではアプリが自分で窓の位置を決められないため、置かれる位置はウィンドウマネージャ次第です（X11 では画面上部）
 
 ## シェル統合と zsh プリセット
 

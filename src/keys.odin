@@ -11,7 +11,7 @@ Action :: enum u8 {
 	Resize_Left, Resize_Right, Resize_Up, Resize_Down, Equalize_Splits,
 	Scroll_Page_Up, Scroll_Page_Down, Scroll_Top, Scroll_Bottom, Prompt_Prev, Prompt_Next,
 	Font_Inc, Font_Dec, Font_Reset, Open_Config, Reload_Config, Search, Clear_Scrollback,
-	Toggle_Fullscreen, Unbind,
+	Toggle_Fullscreen, Command_Palette, Unbind,
 }
 
 MOD_CTRL :: u8(1)
@@ -37,7 +37,7 @@ DEFAULT_BINDS := [?]string {
 	"ctrl+shift+pagedown=scroll_page_down", "ctrl+shift+home=scroll_top", "ctrl+shift+end=scroll_bottom",
 	"ctrl+shift+up=prompt_prev", "ctrl+shift+down=prompt_next",
 	"ctrl+equal=font_inc", "ctrl+shift+equal=font_inc", "ctrl+minus=font_dec", "ctrl+shift+minus=font_dec", "ctrl+0=font_reset",
-	"ctrl+shift+comma=open_config", "ctrl+shift+r=reload_config", "ctrl+shift+f=search", "ctrl+shift+k=clear_scrollback",
+	"ctrl+shift+comma=open_config", "ctrl+shift+r=reload_config", "ctrl+shift+f=search", "ctrl+shift+k=clear_scrollback", "ctrl+shift+p=command_palette",
 	"f11=toggle_fullscreen",
 	"ctrl+shift+1=goto_tab:1", "ctrl+shift+2=goto_tab:2", "ctrl+shift+3=goto_tab:3", "ctrl+shift+4=goto_tab:4",
 	"ctrl+shift+5=goto_tab:5", "ctrl+shift+6=goto_tab:6", "ctrl+shift+7=goto_tab:7", "ctrl+shift+8=goto_tab:8",

@@ -76,6 +76,10 @@ App :: struct {
 	last_notify:   f64,
 	quick:         bool, // running as the quick terminal (--quick)
 	quick_hidden:  bool,
+	palette_on:    bool,
+	palette_text:  [dynamic]rune,
+	palette_sel:   int,
+	palette_time:  f64,
 }
 
 app: App
@@ -478,7 +482,7 @@ leaf_opts :: proc(n: ^Node, focus: bool, blink: f32) -> Draw_Opts {
 	o := Draw_Opts {
 		focused        = focus,
 		sel            = &app.sel,
-		preedit        = app.preedit if focus && !app.search_on else "",
+		preedit        = app.preedit if focus && !app.search_on && !app.palette_on else "",
 		view_vis       = n.scroll_vis,
 		cursor         = n.cur_vis,
 		trail          = n.trail,
@@ -576,6 +580,7 @@ draw_overlay_ui :: proc(w, h: int) {
 		x := f32(leaf.rect.x + leaf.rect.w) - wpx - 8
 		draw_text(&ren.ov, x, f32(leaf.rect.y + 4), label, cfg.bg, mix(cfg.fg, cfg.cursor, 0.3))
 	}
+	if app.palette_on do palette_draw(w, h)
 	if app.hover_url != "" {
 		label := truncate_cells(fmt.tprintf(" 🔗 %s ", app.hover_url), max(1, w / fonts.cell_w - 2))
 		draw_text(&ren.ov, 6, f32(h - fonts.cell_h - 6), label, cfg.fg, mix(cfg.bg, cfg.fg, 0.2))
@@ -841,6 +846,7 @@ run_action :: proc(b: Keybind) {
 			layout()
 		}
 	case .Reload_Config: apply_config()
+	case .Command_Palette: palette_open()
 	case .Search:
 		app.search_on = true
 		clear(&app.search_text)
@@ -961,6 +967,11 @@ on_key :: proc(e: sdl.KeyboardEvent) {
 		app.suppress_text = e.key < 0x40000000 && e.mod & sdl.KMOD_CTRL != {}
 		return
 	}
+	if app.palette_on {
+		palette_key(e)
+		app.suppress_text = e.key < 0x40000000 && e.mod & sdl.KMOD_CTRL != {}
+		return
+	}
 	if b, ok := find_bind(e.key, e.mod); ok {
 		run_action(b)
 		app.suppress_text = true
@@ -1012,7 +1023,7 @@ on_key :: proc(e: sdl.KeyboardEvent) {
 }
 
 on_key_up :: proc(e: sdl.KeyboardEvent) {
-	if app.search_on || len(app.tabs) == 0 do return
+	if app.search_on || app.palette_on || len(app.tabs) == 0 do return
 	t := focused()
 	sync.mutex_lock(&t.mu)
 	flags := kb_flags(t)
@@ -1030,6 +1041,7 @@ on_text :: proc(text: string) {
 		search_changed()
 		return
 	}
+	if app.palette_on {palette_text_input(text); return}
 	if sdl.GetModState() & sdl.KMOD_ALT != {} && len(text) == 1 {
 		send(fmt.tprintf("\x1b%s", text))
 		return
@@ -1481,6 +1493,7 @@ main :: proc() {
 		// A window with a size hint floats on River/ame-shell instead of being tiled.
 		_ = sdl.SetWindowSize(app.window, 1100, 420)
 		_ = sdl.SetWindowMinimumSize(app.window, 1100, 420)
+		_ = sdl.SetWindowPosition(app.window, sdl.WINDOWPOS_CENTERED, 0) // top-center where allowed (X11); WM decides on Wayland
 		quick_listen(proc() {sync.atomic_store(&quick_toggle, true); push_wake()})
 	}
 

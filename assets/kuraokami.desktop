@@ -12,9 +12,14 @@ Categories=System;TerminalEmulator;
 Keywords=shell;prompt;command;commandline;terminal;
 StartupNotify=true
 StartupWMClass=kuraokami
-Actions=new-window;
+Actions=new-window;quick;
 
 [Desktop Action new-window]
 Name=New Window
 Name[ja]=新しいウィンドウ
 Exec=kuraokami
+
+[Desktop Action quick]
+Name=Quick Terminal
+Name[ja]=クイックターミナル(表示/非表示)
+Exec=kuraokami --quick
