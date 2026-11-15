@@ -1,11 +1,11 @@
 pkgbase = kuraokami-git
 	pkgdesc = Tiny, fast, power-friendly, animation-focused GPU terminal emulator written in Odin
-	pkgver = r15.0000000
+	pkgver = r16.0000000
 	pkgrel = 1
 	url = https://github.com/TatsuyaM2667/kuraokami
 	arch = x86_64
 	arch = aarch64
-	license = LicenseRef-unknown
+	license = GPL-3.0-or-later
 	makedepends = git
 	makedepends = zig
 	makedepends = clang

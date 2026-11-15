@@ -407,7 +407,8 @@ odin test src -extra-linker-flags:"-L$(pwd)/lib"
 
 ## ライセンスとクレジット
 
-本体のライセンスはまだ決めていません（追加予定）。
+kuraokami は [GNU General Public License v3.0 以降](LICENSE)（GPL-3.0-or-later）で公開しています。
+同梱の第三者コード（`third_party/kbts`）はそれぞれ元のライセンス（kb_text_shape: zlib、Odin バインディング: BSD-3）に従います。
 
 使用ライブラリ:
 - [SDL3](https://libsdl.org/)（zlib License）
