@@ -7,7 +7,7 @@ import "core:c"
 import "core:os"
 import "core:strings"
 import "base:runtime"
-import kbts "vendor:kb_text_shape"
+import kbts "../third_party/kbts"
 
 when ODIN_OS == .Windows {
 	foreign import ft "system:freetype.lib"

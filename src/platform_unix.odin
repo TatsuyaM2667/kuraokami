@@ -1,4 +1,4 @@
-#+build linux, darwin
+#+build linux, darwin, freebsd, openbsd, netbsd
 package kuraokami
 
 import "core:c"
@@ -12,9 +12,13 @@ import "core:strings"
 when ODIN_OS == .Darwin {
 	foreign import libc_ "system:System"
 	TIOCSWINSZ :: 0x80087467
-} else {
+} else when ODIN_OS == .Linux {
 	foreign import libc_ "system:c"
 	TIOCSWINSZ :: 0x5414
+} else {
+	// BSDs: forkpty lives in libutil; ioctl numbers follow the BSD encoding.
+	foreign import libc_ {"system:c", "system:util"}
+	TIOCSWINSZ :: 0x80087467
 }
 
 @(default_calling_convention = "c")

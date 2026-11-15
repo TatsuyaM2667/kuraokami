@@ -1,0 +1,52 @@
+# Maintainer: TatsuyaM2667 <https://github.com/TatsuyaM2667>
+pkgname=kuraokami-git
+pkgver=r0.0000000
+pkgrel=1
+pkgdesc="Tiny, fast, power-friendly, animation-focused GPU terminal emulator written in Odin"
+arch=('x86_64' 'aarch64')
+url="https://github.com/TatsuyaM2667/kuraokami"
+license=('LicenseRef-unknown')
+depends=('sdl3' 'freetype2' 'fontconfig' 'hicolor-icon-theme')
+makedepends=('git' 'zig' 'clang')
+optdepends=('zsh: built-in shell integration and preset (recommended)'
+            'fastfetch: system info in the first tab'
+            'libnotify: desktop notifications (OSC 9/777, finished commands)'
+            'xdg-utils: open links with Ctrl+click')
+provides=('kuraokami')
+conflicts=('kuraokami')
+# The Odin compiler is pinned to the release kuraokami is developed with
+# (the repo package may lag behind or change std APIs).
+_odin=dev-2026-08
+source=("git+https://github.com/TatsuyaM2667/kuraokami.git")
+source_x86_64=("odin-$_odin-x86_64.tar.gz::https://github.com/odin-lang/Odin/releases/download/$_odin/odin-linux-amd64-$_odin.tar.gz")
+source_aarch64=("odin-$_odin-aarch64.tar.gz::https://github.com/odin-lang/Odin/releases/download/$_odin/odin-linux-arm64-$_odin.tar.gz")
+sha256sums=('SKIP')
+sha256sums_x86_64=('d858c0a182bb28d7b04b04dbb8aed592a9c96c84e4400ee917c74b45848a4d87')
+sha256sums_aarch64=('dea1607f593f6ec2cecf084a6ee9ae9571adc5f5ef0624055efbc9cd57b9dd66')
+
+pkgver() {
+	cd kuraokami
+	printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+}
+
+_odin_path() {
+	for d in "$srcdir"/odin-linux-*/; do printf '%s' "${d%/}"; return; done
+}
+
+build() {
+	cd kuraokami
+	PATH="$(_odin_path):$PATH" ./build.sh
+}
+
+check() {
+	cd kuraokami
+	PATH="$(_odin_path):$PATH" odin test src -extra-linker-flags:"-L$PWD/lib" \
+		-define:COMPRESS_OUTPUT_ALLOCATE_MAX=268435456
+}
+
+package() {
+	cd kuraokami
+	DESTDIR="$pkgdir" PREFIX=/usr ./install.sh
+	install -Dm644 third_party/kbts/src/LICENSE "$pkgdir/usr/share/licenses/$pkgname/kb_text_shape-LICENSE"
+	install -Dm644 third_party/kbts/LICENSE-odin-bindings "$pkgdir/usr/share/licenses/$pkgname/odin-bindings-LICENSE"
+}

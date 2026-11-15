@@ -3,3 +3,5 @@
 shell/zshenv linguist-language=Shell
 *.zsh linguist-language=Shell
 *.bash linguist-language=Shell
+# Vendored third-party code (kb_text_shape C source + Odin bindings) is not part of the language stats
+third_party/** linguist-vendored
