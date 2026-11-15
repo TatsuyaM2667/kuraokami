@@ -64,6 +64,29 @@ kuraokami        # またはアプリランチャーから「kuraokami」
 
 アンインストールは `./uninstall.sh`。`PREFIX=/usr/local ./install.sh` のようにインストール先も変えられます。
 
+### Arch Linux（AUR）
+
+```sh
+yay -S kuraokami-git        # または paru -S kuraokami-git
+```
+
+PKGBUILD は [`packaging/aur/kuraokami-git`](packaging/aur/kuraokami-git/PKGBUILD) にあります。手元でビルドする場合:
+
+```sh
+cd packaging/aur/kuraokami-git && makepkg -si
+```
+
+Odin はリポジトリ版に左右されないよう、開発に使っている公式リリース（dev-2026-08）を PKGBUILD 内で取得して使います。
+
+### FreeBSD / OpenBSD / NetBSD
+
+```sh
+pkg install odin zig sdl3 freetype2 fontconfig pkgconf   # FreeBSD の例
+./build.sh && PREFIX=/usr/local ./install.sh
+```
+
+Odin のパッケージが古い場合は [公式リリース](https://github.com/odin-lang/Odin/releases) か [ソースからのビルド](https://odin-lang.org/docs/install/) を使ってください（dev-2026-08 以降が必要）。
+
 ```sh
 kuraokami -e htop     # コマンドを直接起動
 kuraokami --version
@@ -73,11 +96,14 @@ kuraokami --version
 
 ### 必要なもの
 
-| | Linux | macOS | Windows |
+| | Linux / BSD | macOS | Windows |
 |---|---|---|---|
-| ツール | [Odin](https://odin-lang.org/)（dev-2026-08 で確認）、[Zig](https://ziglang.org/)（0.17 で確認） | Odin、Zig | Odin、Zig |
+| ツール | [Odin](https://odin-lang.org/)（dev-2026-08 以降）、[Zig](https://ziglang.org/)（無ければ `cc` で代用） | Odin、Zig | Odin、Zig |
 | ライブラリ | SDL3, freetype2, fontconfig, OpenGL 3.3 | Homebrew: `sdl3 freetype fontconfig` | vcpkg: `freetype`（SDL3.dll は Odin 同梱） |
 | 手順 | `./build.sh` | `./build.sh` | Developer Prompt で `build.bat` |
+
+ビルドは Odin のインストール先を一切書き換えません（パッケージ版の Odin でもそのまま使えます）。
+テキストシェーパー kb_text_shape は `third_party/kbts` に同梱しており、`./lib` にビルドされます。
 
 ```sh
 ./build.sh          # release (-o:speed)
@@ -85,7 +111,7 @@ kuraokami --version
 ```
 
 本体はすべて Odin で書かれています。FreeType と fontconfig も Odin から直接呼び出しています（構造体レイアウトはテストで検証）。
-Zig は、Odin 同梱のテキストシェーパー `vendor:kb_text_shape` を最初に一度だけビルドするための C コンパイラ（`zig cc`）としてだけ使います。
+Zig は、同梱のテキストシェーパー kb_text_shape（`third_party/kbts`）を最初に一度だけビルドするための C コンパイラ（`zig cc`）としてだけ使います。
 
 > **注意:** 動作確認済みなのは Linux（Wayland / X11）だけです。macOS / Windows は型チェックまでしか確認していません（PR 歓迎）。
 
@@ -386,7 +412,7 @@ odin test src -extra-linker-flags:"-L$(pwd)/lib"
 使用ライブラリ:
 - [SDL3](https://libsdl.org/)（zlib License）
 - [FreeType](https://freetype.org/)（FTL / GPLv2）
-- [kb_text_shape](https://github.com/JimmyLefevre/kb)（zlib License、Odin の `vendor:kb_text_shape` として同梱）
+- [kb_text_shape](https://github.com/JimmyLefevre/kb)（zlib License）と Odin の `vendor:kb_text_shape` バインディング（BSD-3）を `third_party/kbts` に同梱
 - [fontconfig](https://www.freedesktop.org/wiki/Software/fontconfig/)（MIT 系）
 - [Odin 標準ライブラリ](https://odin-lang.org/)（PNG / zlib / base64 など、zlib License）
 
