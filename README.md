@@ -28,6 +28,7 @@
 - [設定](#設定)
 - [クイックターミナル](#クイックターミナル)
 - [シェル統合と zsh プリセット](#シェル統合と-zsh-プリセット)
+- [fastfetch のロゴ](#fastfetch-のロゴ)
 - [アニメーションとカスタムシェーダー](#アニメーションとカスタムシェーダー)
 - [画像・動画の表示](#画像動画の表示)
 - [パフォーマンス](#パフォーマンス)
@@ -43,7 +44,7 @@
 | | |
 |---|---|
 | ⚡ **速い** | 50 MB のテキスト出力を約 0.80 秒で処理。描画は PTY 読み取りと並行して行うので、出力が詰まらない |
-| 🪶 **軽い** | 単一バイナリ約 1.9 MB（シェーパーとUnicodeテーブル込み）。直接依存は SDL3・FreeType・fontconfig・libc だけ。C++ / Python / JVM は一切不使用 |
+| 🪶 **軽い** | 単一バイナリ約 1.4 MB（シェーパーとUnicodeテーブル込み）。直接依存は SDL3・FreeType・fontconfig・libc だけ。C++ / Python / JVM は一切不使用 |
 | 🔋 **省電力** | タイマーもポーリングもなし。何も起きていないときは完全にスリープ（カーソル点滅も 30 秒無操作で停止 → CPU 0）。アニメーションは動いている間だけ vsync で描画 |
 | ✨ **アニメーション** | カーソルのスライドと残像、フェード点滅、スムーススクロール、タブのスライド、Ghostty 互換カスタムシェーダー |
 | 🖼️ **画像・動画** | Kitty graphics protocol（`mpv --vo=kitty` で動画再生）と Sixel |
@@ -164,8 +165,10 @@ Zig は、同梱のテキストシェーパー kb_text_shape（`third_party/kbts
 | `Ctrl+Shift+E` / `Ctrl+Shift+O` | 右に分割 / 下に分割 |
 | `Ctrl+Alt+矢印` | ペイン間の移動 |
 | `Ctrl+Shift+Alt+矢印` / `Ctrl+Shift+Alt+=` | 分割サイズ変更 / 均等化 |
-| `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Ctrl+Shift+←/→` | 次 / 前のタブ |
-| `Ctrl+Shift+1`…`9` | タブ番号へ移動 |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Ctrl+PageDown` / `Ctrl+PageUp`, `Ctrl+Shift+←/→` | 次 / 前のタブ |
+| `Alt+1`…`9`, `Ctrl+Shift+1`…`9` | タブ番号へ移動 |
+| タブバーでホイール / ダブルクリック | タブ切り替え / 新しいタブ |
+| プロンプトの入力中の行をクリック | カーソルをそこへ移動（`cursor-click-to-move`） |
 | `Shift+PgUp/PgDn`, `Ctrl+Shift+Home/End` | スクロール |
 | `Ctrl+Shift+↑/↓` | 前 / 次のプロンプトへ（OSC 133） |
 | `Ctrl+Shift+F` | 検索（`Enter` 古い方へ、`Shift+Enter` 新しい方へ、`Esc` で閉じる） |
@@ -219,6 +222,11 @@ keybind = ctrl+shift+d=split_right
 | `shell-preset` | `true` | 内蔵 zsh プリセット（入力候補・ハイライト・補完・プロンプトなど） |
 | `startup-fetch` | `true` | 起動時に fastfetch を実行 |
 | `fetch-command` | `fastfetch` | 起動時に実行するコマンド |
+| `fetch-logo` | （fastfetch の既定） | fastfetch のロゴ。[下記](#fastfetch-のロゴ)参照 |
+| `fetch-logo-size` | `30x14` | 画像・動画ロゴの大きさ（セル数 幅x高さ） |
+| `fetch-logo-animate-seconds` | `30` | GIF・動画ロゴを再生する秒数（`0` で無制限。省電力のため既定は 30 秒で停止） |
+| `cursor-click-to-move` | `true` | プロンプトの入力行をクリックでカーソル移動 |
+| `renderer` | `auto` | `gles` で OpenGL ES 3.0 を使う（GL 3.3 が無い環境では自動で ES に切り替え） |
 | `command` | `$SHELL` | 起動するシェル |
 | `scrollback-limit` | `10000` | スクロールバック行数 |
 | `window-padding` | `24` | ペイン内の余白（px） |
@@ -288,7 +296,12 @@ zsh には `ZDOTDIR` 経由で、bash には `--rcfile` 経由で読み込ませ
 | 履歴 | 10 万件、タブ間で共有、重複除去、スペース始まりは記録しない |
 | キー | `↑`/`↓` で入力中の文字から始まる履歴を検索、`Ctrl+←/→` で単語移動、`Ctrl+Backspace` で単語削除、`Home`/`End`/`Delete`、`Ctrl+X Ctrl+E` でエディタ編集 |
 | プロンプト | 2 行構成（下の例）。git ブランチと変更状態（●）、1 秒以上かかったコマンドの所要時間、失敗時の `✘ 終了コード`、ジョブ数、時刻 |
-| その他 | `auto_cd`（ディレクトリ名だけで移動）、`ll` / `la` / `..` などのエイリアス、zsh の初回設定ウィザードを出さない |
+| 略語（fish 風） | `gs` + スペースで `git status` に展開（`ga` `gc` `gd` `gp` `gl` など）。`.zshrc` に `abbr dc='docker compose'` で追加、`abbr` で一覧、`Ctrl+Space` で展開しない |
+| `j`（zoxide 風） | よく行くディレクトリを覚え、`j kura` でパスに `kura` を含む一番よく使う場所へ移動。`j` だけで一覧 |
+| もしかして | 打ち間違えたコマンドに近いものを提案（`gti` → `もしかして: git`） |
+| その他 | `auto_cd`（ディレクトリ名だけで移動）、`mkcd`、`-` で前のディレクトリへ、空の行で `Ctrl+Z` → 中断したジョブを再開、`Ctrl+R` でパターン検索、`ll` / `la` / `..` などのエイリアス、zsh の初回設定ウィザードを出さない |
+
+bash でも `j` と「もしかして」が使えます。fish はシェル統合（ディレクトリ・プロンプト位置・タイトル）に対応しています（fish 自身に入力候補などがあるため、プリセットはありません）。
 
 ```
 ╭─ user@host in ~/projects/kuraokami   main ●
@@ -296,6 +309,23 @@ zsh には `ZDOTDIR` 経由で、bash には `--rcfile` 経由で読み込ませ
 ```
 
 プロンプトなどを自分の `.zshrc` で設定していれば、そちらが使われます。
+
+## fastfetch のロゴ
+
+起動時の fastfetch のロゴを `fetch-logo` で変えられます。
+
+```ini
+fetch-logo = kuraokami            # kuraokami 内蔵のアスキーアート（kuraokami / crystal）
+fetch-logo = arch                 # fastfetch 内蔵の 400 種類以上のロゴ（fastfetch --list-logos）
+fetch-logo = ~/art.txt            # 自分のアスキーアート（$1〜$9 で色分け）
+fetch-logo = ~/Pictures/me.png    # 画像（PNG / JPEG / BMP / TGA / QOI）
+fetch-logo = ~/Videos/loop.gif    # GIF・動画（GIF / WebP / MP4 / WebM / MKV / MOV。ffmpeg が必要）
+fetch-logo = none                 # ロゴなし
+fetch-logo-size = 30x14
+```
+
+GIF・動画は ffmpeg でコマ（最大 12 秒・15 fps）を取り出し、fastfetch が置いた画像を kuraokami 自身がその場で再生します。
+次のコマのタイミングでだけ起きて描画し、`fetch-logo-animate-seconds`（既定 30 秒）で止まります。画面外にスクロールした間も描画しません。
 
 ## アニメーションとカスタムシェーダー
 
@@ -339,7 +369,7 @@ Linux（AMD Ryzen 7 7735HS / Radeon 680M、Wayland）での実測値:
 | パーサー単体 | 約 63 MB/秒 |
 | アイドル時 CPU（点滅停止後） | **0 tick / 5 秒** |
 | メモリ（RSS） | 約 94 MB（大半は Mesa の GL ドライバと fontconfig のキャッシュ） |
-| バイナリサイズ | 約 1.9 MB |
+| バイナリサイズ | 約 1.4 MB |
 
 省電力と速さのための工夫:
 - イベントを待つ間はブロックし、タイマーもポーリングもしない
@@ -400,7 +430,6 @@ odin test src -extra-linker-flags:"-L$(pwd)/lib"
 
 - macOS / Windows は実機未検証です（型チェックは通っています）。Windows はデスクトップ通知と Kitty の共有メモリ転送に未対応です。
 - 背景のぼかし（blur）は未対応です（コンポジター側のプロトコルが必要）。
-- fish のシェル統合はありません（fish 自体が OSC 7 を出すので、ディレクトリ継承は動きます）。
 - 英数字だけの語はシェーパーを通さないため、`www` のような英字だけのリガチャは出ません（速度優先）。
 - 閉じたペインの端末状態はメモリを解放しません（読み取りスレッドとの競合を避けるため）。
 - 起動時の fastfetch は Unix 系のみです。

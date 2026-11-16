@@ -39,6 +39,7 @@ Config :: struct {
 	restore_session: bool,
 	quick_autohide: bool,
 	click_to_move:  bool,
+	renderer:       string, // "" auto | "gles"
 	fetch_logo:     string,
 	fetch_logo_size: [2]int, // cells (width, height) for image logos
 	fetch_logo_seconds: f64, // how long an animated logo plays; 0 = forever
@@ -195,6 +196,10 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 		case "restore-session": cfg.restore_session = parse_bool(v)
 		case "quick-terminal-autohide": cfg.quick_autohide = parse_bool(v)
 		case "cursor-click-to-move": cfg.click_to_move = parse_bool(v)
+		case "renderer":
+			if v == "auto" || v == "gl" do cfg.renderer = ""
+			else if v == "gles" do cfg.renderer = "gles"
+			else do bad = true
 		case "fetch-logo": cfg.fetch_logo = strings.clone(v)
 		case "fetch-logo-size":
 			bad = true

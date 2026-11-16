@@ -56,6 +56,7 @@ Renderer :: struct {
 	fbo, fbo_tex: u32,
 	fbo_w, fbo_h: int,
 	frame:     i32,
+	gles:      bool, // running on OpenGL ES 3.0 (shaders get an ES header)
 }
 
 fonts: Fonts
@@ -293,7 +294,7 @@ void main() { mainImage(_kuraokami_out, gl_FragCoord.xy); }
 `
 
 renderer_init :: proc() -> bool {
-	prog, ok := gl.load_shaders_source(VS, FS)
+	prog, ok := gl.load_shaders_source(glsl(VS), glsl(FS))
 	if !ok do return false
 	ren.prog = prog
 	ren.u_screen = gl.GetUniformLocation(prog, "screen")
@@ -333,7 +334,7 @@ post_shader_load :: proc(spec: string) -> string {
 		src = string(data)
 	}
 	fs := strings.concatenate({POST_PRELUDE, src, POST_MAIN}, context.temp_allocator)
-	prog, ok := gl.load_shaders_source(POST_VS, fs)
+	prog, ok := gl.load_shaders_source(glsl(POST_VS), glsl(fs))
 	if !ok do return "custom shader failed to compile"
 	ren.post = prog
 	return ""
@@ -843,4 +844,11 @@ find_family_list :: proc(list: string, bold, italic: bool) -> string {
 		if p := find_font(n, bold, italic, 0, !last); p != "" do return p
 	}
 	return find_font("monospace", bold, italic)
+}
+
+// Shaders are written for GL 3.3 core; on OpenGL ES 3.0 only the header differs.
+glsl :: proc(src: string) -> string {
+	if !ren.gles do return src
+	s, _ := strings.replace(src, "#version 330 core", "#version 300 es\nprecision highp float;\nprecision highp int;", 1, context.temp_allocator)
+	return s
 }

@@ -641,10 +641,11 @@ render :: proc() {
 	if shot := os.get_env("KURAOKAMI_SHOT", context.temp_allocator); shot != "" {
 		// Debug aid: dump each frame as a PNG (used for headless visual checks).
 		gl.BindFramebuffer(gl.FRAMEBUFFER, 0)
-		px := make([]u8, int(w) * int(h) * 3, context.temp_allocator)
+		px := make([]u8, int(w) * int(h) * 4, context.temp_allocator) // RGBA: the only read-back format GLES guarantees
 		gl.PixelStorei(gl.PACK_ALIGNMENT, 1)
-		gl.ReadPixels(0, 0, w, h, gl.RGB, gl.UNSIGNED_BYTE, raw_data(px))
-		_ = os.write_entire_file(shot, png_encode_rgb(px, int(w), int(h)))
+		gl.ReadPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, raw_data(px))
+		for i in 0 ..< int(w) * int(h) do px[i * 4 + 3] = 255 // show the content, not the window alpha
+		_ = os.write_entire_file(shot, png_encode(px, int(w), int(h), 4, true))
 		alpha: [4]u8
 		gl.ReadPixels(w - 1, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, &alpha[0])
 		fmt.eprintfln("kuraokami-shot: corner rgba=%v", alpha)
@@ -1500,8 +1501,18 @@ main :: proc() {
 	flags := sdl.WindowFlags{.OPENGL, .RESIZABLE, .HIGH_PIXEL_DENSITY, .TRANSPARENT}
 	app.window = sdl.CreateWindow("kuraokami", 960, 600, flags)
 	if app.window == nil {fmt.eprintln("kuraokami: window:", sdl.GetError()); os.exit(1)}
-	glctx := sdl.GL_CreateContext(app.window)
-	if glctx == nil {fmt.eprintln("kuraokami: GL:", sdl.GetError()); os.exit(1)}
+	glctx: sdl.GLContext
+	if cfg.renderer != "gles" do glctx = sdl.GL_CreateContext(app.window)
+	if glctx == nil {
+		// No desktop GL 3.3 (Raspberry Pi, some ARM boards, VMs): fall back to OpenGL ES 3.0.
+		_ = sdl.GL_SetAttribute(.CONTEXT_PROFILE_MASK, i32(transmute(u32)sdl.GL_CONTEXT_PROFILE_ES))
+		_ = sdl.GL_SetAttribute(.CONTEXT_MAJOR_VERSION, 3)
+		_ = sdl.GL_SetAttribute(.CONTEXT_MINOR_VERSION, 0)
+		when ODIN_OS == .Darwin do _ = sdl.GL_SetAttribute(.CONTEXT_FLAGS, 0)
+		glctx = sdl.GL_CreateContext(app.window)
+		ren.gles = true
+	}
+	if glctx == nil {fmt.eprintln("kuraokami: no OpenGL 3.3 or OpenGL ES 3.0:", sdl.GetError()); os.exit(1)}
 	gl.load_up_to(3, 3, sdl.gl_set_proc_address)
 	_ = sdl.GL_SetSwapInterval(1)
 	if !renderer_init() {fmt.eprintln("kuraokami: shader compile failed"); os.exit(1)}
