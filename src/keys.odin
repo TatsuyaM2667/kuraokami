@@ -205,7 +205,8 @@ kitty_encode :: proc(flags: u8, key: sdl.Keycode, mods: u8, event: int, text: ru
 	legacy_text := !functional || key == sdl.K_RETURN || key == sdl.K_TAB || key == sdl.K_BACKSPACE
 	if !all {
 		if legacy_text && event != 1 do return "" // text-ish keys report release/repeat only in all-keys mode
-		if !functional && m & ~int(1) == 0 do return "" // plain or shifted text stays text
+		// Plain or Shift-only text stays text (Shift+1 must type "!", not CSI 49;2u).
+		if !functional && mods & ~MOD_SHIFT == 0 do return ""
 		if (key == sdl.K_RETURN || key == sdl.K_TAB || key == sdl.K_BACKSPACE) && m == 1 do return ""
 	}
 	b := strings.builder_make(context.temp_allocator)

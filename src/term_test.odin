@@ -180,6 +180,9 @@ test_kitty_keyboard :: proc(tt: ^testing.T) {
 	testing.expect_value(tt, kitty_encode(1, sdl.K_ESCAPE, 0, 1, 0), "\x1b[27u")
 	testing.expect_value(tt, kitty_encode(1, sdl.K_A, MOD_CTRL, 1, 0), "\x1b[97;5u")
 	testing.expect_value(tt, kitty_encode(1, sdl.K_A, 0, 1, 0), "")
+	testing.expect_value(tt, kitty_encode(1, sdl.K_1, MOD_SHIFT, 1, 0), "") // Shift+1 types "!"
+	testing.expect_value(tt, kitty_encode(1, sdl.K_A, MOD_SHIFT, 1, 0), "") // Shift+a types "A"
+	testing.expect_value(tt, kitty_encode(1, sdl.K_1, MOD_SHIFT | MOD_CTRL, 1, 0), "\x1b[49;6u")
 	testing.expect_value(tt, kitty_encode(1, sdl.K_UP, MOD_SHIFT, 1, 0), "\x1b[1;2A")
 	testing.expect_value(tt, kitty_encode(1, sdl.K_UP, 0, 1, 0), "\x1b[A")
 	testing.expect_value(tt, kitty_encode(10, sdl.K_A, 0, 3, 0), "\x1b[97;1:3u")
