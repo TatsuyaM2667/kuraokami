@@ -167,7 +167,10 @@ Zig は、同梱のテキストシェーパー kb_text_shape（`third_party/kbts
 | `Ctrl+Shift+Alt+矢印` / `Ctrl+Shift+Alt+=` | 分割サイズ変更 / 均等化 |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab`, `Ctrl+PageDown` / `Ctrl+PageUp`, `Ctrl+Shift+←/→` | 次 / 前のタブ |
 | `Alt+1`…`9`, `Ctrl+Shift+1`…`9` | タブ番号へ移動 |
-| タブバーでホイール / ダブルクリック | タブ切り替え / 新しいタブ |
+| タブバーの `+` / 空き部分をダブルクリック | 新しいタブ |
+| タブの `×` / 中クリック | タブを閉じる |
+| タブをドラッグ | 並べ替え |
+| タブバーでホイール | タブ切り替え |
 | プロンプトの入力中の行をクリック | カーソルをそこへ移動（`cursor-click-to-move`） |
 | `Shift+PgUp/PgDn`, `Ctrl+Shift+Home/End` | スクロール |
 | `Ctrl+Shift+↑/↓` | 前 / 次のプロンプトへ（OSC 133） |
@@ -177,7 +180,6 @@ Zig は、同梱のテキストシェーパー kb_text_shape（`third_party/kbts
 | `Ctrl+Shift+,` / `Ctrl+Shift+R` | 設定ファイルを開く / 再読み込み |
 | `F11` | フルスクリーン |
 | `Ctrl+Shift+P` | コマンドパレット（`↑`/`↓` で選択、`Enter` で実行、`Esc` で閉じる） |
-| タブバーを中クリック | タブを閉じる |
 
 macOS では `Cmd+C` / `Cmd+V` / `Cmd+T` / `Cmd+W` / `Cmd+D` なども使えます。
 
@@ -226,6 +228,7 @@ keybind = ctrl+shift+d=split_right
 | `fetch-logo-size` | `30x14` | 画像・動画ロゴの大きさ（セル数 幅x高さ） |
 | `fetch-logo-animate-seconds` | `30` | GIF・動画ロゴを再生する秒数（`0` で無制限。省電力のため既定は 30 秒で停止） |
 | `cursor-click-to-move` | `true` | プロンプトの入力行をクリックでカーソル移動 |
+| `tab-bar` | `always` | ブラウザのようなタブバーを常に表示（`auto` で 2 枚以上のときだけ、`never` で非表示） |
 | `renderer` | `auto` | `gles` で OpenGL ES 3.0 を使う（GL 3.3 が無い環境では自動で ES に切り替え） |
 | `command` | `$SHELL` | 起動するシェル |
 | `scrollback-limit` | `10000` | スクロールバック行数 |

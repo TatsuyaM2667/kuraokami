@@ -55,7 +55,7 @@ App :: struct {
 	last_mouse_cell: [2]int,
 	mouse_px:      [2]f32,
 	drag:          ^Node, // split divider being dragged
-	cursor_default, cursor_ew, cursor_ns: ^sdl.Cursor,
+	cursor_default, cursor_ew, cursor_ns, cursor_arrow: ^sdl.Cursor,
 	// search
 	search_on:     bool,
 	search_text:   [dynamic]rune,
@@ -77,6 +77,8 @@ App :: struct {
 	last_notify:   f64,
 	quick:         bool, // running as the quick terminal (--quick)
 	quick_hidden:  bool,
+	tab_hover:     Tab_Hit,
+	tab_drag:      int, // tab being dragged to reorder (-1: none)
 	palette_on:    bool,
 	palette_text:  [dynamic]rune,
 	palette_sel:   int,
@@ -367,7 +369,7 @@ layout :: proc() {
 	if len(app.tabs) == 0 do return
 	w, h: c.int
 	_ = sdl.GetWindowSizeInPixels(app.window, &w, &h)
-	app.tabbar_h = fonts.cell_h + 6 if len(app.tabs) > 1 else 0
+	app.tabbar_h = fonts.cell_h + 8 if tabbar_visible() else 0
 	for tab in app.tabs do layout_node(tab.root, {0, app.tabbar_h, int(w), int(h) - app.tabbar_h})
 	app.redraw = true
 	update_ime_rect()
@@ -557,23 +559,7 @@ truncate_cells :: proc(s: string, maxc: int) -> string {
 draw_overlay_ui :: proc(w, h: int) {
 	set_offset(0)
 	scissor(0, 0, w, h)
-	if app.tabbar_h > 0 {
-		n := len(app.tabs)
-		tw := w / n
-		// Sliding underline marks the active tab.
-		p := ease_out((app.now - app.tab_anim_start) / 0.25) if app.tab_prev >= 0 && cfg.animation else 1
-		from := f32(app.tab_prev if app.tab_prev >= 0 && app.tab_prev < n else app.cur)
-		ux := (from + (f32(app.cur) - from) * p) * f32(tw)
-		for tb, i in app.tabs {
-			x := f32(i * tw)
-			active := i == app.cur
-			bg := mix(cfg.bg, cfg.fg, 0.14 if active else 0.05)
-			quad(&ren.ov, x, 0, x + f32(tw) - 1, f32(app.tabbar_h), rgba(bg))
-			label := truncate_cells(fmt.tprintf(" %d %s", i + 1, tab_title(tb)), max(1, tw / fonts.cell_w - 1))
-			draw_text(&ren.ov, x + 2, 3, label, cfg.fg if active else mix(cfg.fg, cfg.bg, 0.4), bg)
-		}
-		quad(&ren.ov, ux, f32(app.tabbar_h - 2), ux + f32(tw) - 1, f32(app.tabbar_h), rgba(cfg.cursor))
-	}
+	if app.tabbar_h > 0 do draw_tabbar(w)
 	if app.search_on {
 		leaf := current_tab().focus
 		label := fmt.tprintf(" 🔍 %s%s▏ %d ", utf8.runes_to_string(app.search_text[:], context.temp_allocator), app.preedit, app.search_count)
@@ -1223,20 +1209,10 @@ url_at :: proc(t: ^Term, x, y: int) -> string {
 
 on_mouse_button :: proc(e: sdl.MouseButtonEvent) {
 	px, py := int(e.x * app.density), int(e.y * app.density)
-	if app.tabbar_h > 0 && py < app.tabbar_h {
-		if e.down {
-			w, h: c.int
-			_ = sdl.GetWindowSizeInPixels(app.window, &w, &h)
-			i := px / max(1, int(w) / len(app.tabs))
-			if e.button == 1 && e.clicks == 2 {new_tab(); return} // double-click the tab bar: new tab
-			if i >= len(app.tabs) do return
-			if e.button == 2 {
-				tab := app.tabs[i]
-				app.cur = i
-				for tab.root.term == nil do close_leaf(tab, tab.focus)
-				close_pane(tab.root)
-			} else do switch_tab(i)
-		}
+	if (app.tabbar_h > 0 && py < app.tabbar_h) || (!e.down && app.tab_drag >= 0) {
+		w, h: c.int
+		_ = sdl.GetWindowSizeInPixels(app.window, &w, &h)
+		tabbar_button(e, px, int(w))
 		return
 	}
 	if e.button == 1 {
@@ -1294,6 +1270,11 @@ on_mouse_button :: proc(e: sdl.MouseButtonEvent) {
 on_mouse_motion :: proc(e: sdl.MouseMotionEvent) {
 	px, py := int(e.x * app.density), int(e.y * app.density)
 	app.mouse_px = {f32(px), f32(py)}
+	{
+		w, h: c.int
+		_ = sdl.GetWindowSizeInPixels(app.window, &w, &h)
+		if tabbar_motion(e, px, py, int(w)) {_ = sdl.SetCursor(app.cursor_arrow); return}
+	}
 	// Ctrl+hover shows where a link really goes (OSC 8 text can disguise its target).
 	hover := ""
 	if e.state == {} && sdl.GetModState() & (sdl.KMOD_CTRL | sdl.KMOD_GUI) != {} {
@@ -1519,6 +1500,8 @@ main :: proc() {
 	app.cursor_default = sdl.CreateSystemCursor(.TEXT)
 	app.cursor_ew = sdl.CreateSystemCursor(.EW_RESIZE)
 	app.cursor_ns = sdl.CreateSystemCursor(.NS_RESIZE)
+	app.cursor_arrow = sdl.CreateSystemCursor(.DEFAULT)
+	app.tab_drag = -1
 	app.density = max(sdl.GetWindowPixelDensity(app.window), 1)
 	app.wake_type = sdl.RegisterEvents(1)
 	app.font_pt = cfg.font_size
