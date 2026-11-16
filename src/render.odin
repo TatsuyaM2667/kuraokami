@@ -14,6 +14,7 @@ import gl "vendor:OpenGL"
 Glyph :: struct {
 	u0, v0, u1, v1: f32,
 	w, h, left, top: f32, // in pixels, already scaled
+	adv:            f32, // horizontal advance in pixels (proportional UI text)
 	color:          bool,
 	ok:             bool,
 }
@@ -36,6 +37,8 @@ Fonts :: struct {
 	atlas_size:  int,
 	ax, ay, arow: int,
 	atlas_reset: bool,
+	ui_face:     int, // proportional UI font (tab bar); -1 if none
+	ui_ascent, ui_h: int,
 }
 
 Vertex :: struct {
@@ -62,10 +65,10 @@ Renderer :: struct {
 fonts: Fonts
 ren: Renderer
 
-find_font :: proc(family: string, bold, italic: bool, cp: u32 = 0, strict := false) -> string {
+find_font :: proc(family: string, bold, italic: bool, cp: u32 = 0, strict := false, mono := true) -> string {
 	buf: [1024]u8
 	fam := strings.clone_to_cstring(family, context.temp_allocator)
-	if kf_find(fam, c.int(bold), c.int(italic), cp, &buf[0], len(buf), strict) == 0 do return ""
+	if kf_find(fam, c.int(bold), c.int(italic), cp, &buf[0], len(buf), strict, mono) == 0 do return ""
 	return strings.clone(string(cstring(&buf[0])))
 }
 
@@ -95,6 +98,21 @@ fonts_load :: proc(px: int) {
 	adv, asc, desc, h: c.int
 	kf_metrics(fonts.faces[0], &adv, &asc, &desc, &h)
 	fonts.cell_w, fonts.cell_h, fonts.ascent = int(adv), int(h), int(asc)
+	// Proportional UI font for the tab bar (browser-like), a bit smaller than the terminal text.
+	fonts.ui_face = -1
+	if ui := find_family_list(cfg.ui_font, false, false, false); ui != "" {
+		uf := kf_open(strings.clone_to_cstring(ui, context.temp_allocator), c.int(f32(px) * cfg.ui_font_scale + 0.5))
+		delete(ui)
+		if uf != nil {
+			append(&fonts.faces, uf)
+			append(&fonts.paths, "")
+			fonts.ui_face = len(fonts.faces) - 1
+			ua, uasc, udesc, uh: c.int
+			kf_metrics(uf, &ua, &uasc, &udesc, &uh)
+			fonts.ui_ascent, fonts.ui_h = int(uasc), int(uh)
+		}
+	}
+	if fonts.ui_face < 0 do fonts.ui_ascent, fonts.ui_h = fonts.ascent, fonts.cell_h
 	atlas_clear()
 }
 
@@ -133,6 +151,7 @@ face_for :: proc(cp: rune, style: int) -> int {
 	}
 	if idx, ok := fonts.fb_cache[cp]; ok do return idx
 	if !emoji do for i in 4 ..< len(fonts.faces) {
+		if i == fonts.ui_face do continue // different pixel size: never a terminal fallback
 		if kf_has(fonts.faces[i], u32(cp)) != 0 {fonts.fb_cache[cp] = i; return i}
 	}
 	path := find_font("emoji" if emoji else "", false, false, u32(cp))
@@ -159,9 +178,11 @@ get_glyph :: proc(face: int, gid: u32) -> Glyph {
 	if g, ok := fonts.glyphs[key]; ok do return g
 	g: Glyph
 	w, h, left, top, pitch, color: c.int
-	scale: f32
+	scale, adv: f32
 	buf: [^]u8
-	if kf_render_glyph(fonts.faces[face], gid, c.int(fonts.px), &w, &h, &left, &top, &pitch, &color, &scale, &buf) != 0 && w > 0 && h > 0 {
+	rendered := kf_render_glyph(fonts.faces[face], gid, c.int(fonts.px), &w, &h, &left, &top, &pitch, &color, &scale, &buf, &adv) != 0
+	if rendered do g.adv = adv * scale
+	if rendered && w > 0 && h > 0 {
 		sz := fonts.atlas_size
 		if fonts.ax + int(w) + 1 >= sz {
 			fonts.ax = 1
@@ -200,12 +221,12 @@ get_glyph :: proc(face: int, gid: u32) -> Glyph {
 			u0 = f32(fonts.ax) / fs, v0 = f32(fonts.ay) / fs,
 			u1 = f32(fonts.ax + int(w)) / fs, v1 = f32(fonts.ay + int(h)) / fs,
 			w = f32(w) * scale, h = f32(h) * scale, left = f32(left) * scale, top = f32(top) * scale,
-			color = color != 0, ok = true,
+			color = color != 0, ok = true, adv = adv * scale,
 		}
 		// Bitmap emoji are sized for a much larger ppem: fit them into the cell height.
 		if color != 0 && g.h > f32(fonts.cell_h) {
 			k := f32(fonts.cell_h) / g.h
-			g.w *= k; g.h *= k; g.left *= k; g.top *= k
+			g.w *= k; g.h *= k; g.left *= k; g.top *= k; g.adv *= k
 		}
 		fonts.ax += int(w) + 1
 		fonts.arow = max(fonts.arow, int(h))
@@ -841,15 +862,15 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
 // font-family may be a comma-separated list: the first family that is really installed wins
 // (the last entry, or "monospace", is accepted as whatever fontconfig substitutes).
-find_family_list :: proc(list: string, bold, italic: bool) -> string {
+find_family_list :: proc(list: string, bold, italic: bool, mono := true) -> string {
 	names := strings.split(list, ",", context.temp_allocator)
 	for name, i in names {
 		n := strings.trim_space(name)
 		if n == "" do continue
-		last := i == len(names) - 1 || n == "monospace"
-		if p := find_font(n, bold, italic, 0, !last); p != "" do return p
+		last := i == len(names) - 1 || n == "monospace" || n == "sans-serif"
+		if p := find_font(n, bold, italic, 0, !last, mono); p != "" do return p
 	}
-	return find_font("monospace", bold, italic)
+	return find_font("monospace" if mono else "sans-serif", bold, italic, 0, false, mono)
 }
 
 // Shaders are written for GL 3.3 core; on OpenGL ES 3.0 only the header differs.
@@ -884,6 +905,54 @@ draw_label :: proc(list: ^[dynamic]Vertex, x, y: f32, s: string, fg: [4]u8) -> f
 		if w == 0 do continue
 		glyph_quad(list, ch, 0, cx, y, fg)
 		cx += f32(fonts.cell_w * w)
+	}
+	return cx - x
+}
+
+// ---------- proportional UI text (tab bar) ----------
+
+ui_glyph :: proc(r: rune) -> (Glyph, bool) {
+	if fonts.ui_face >= 0 && kf_has(fonts.faces[fonts.ui_face], u32(r)) != 0 {
+		return get_glyph(fonts.ui_face, kf_glyph_index(fonts.faces[fonts.ui_face], u32(r))), true
+	}
+	f := face_for(r, 0)
+	if f < 0 do f = 0
+	return get_glyph(f, kf_glyph_index(fonts.faces[f], u32(r))), false
+}
+
+ui_advance :: proc(r: rune) -> f32 {
+	g, _ := ui_glyph(r)
+	if g.adv > 0 do return g.adv
+	return f32(fonts.cell_w * max(rune_width(r), 1))
+}
+
+ui_text_width :: proc(s: string) -> f32 {
+	w: f32
+	for r in s do w += ui_advance(r)
+	return w
+}
+
+// Fit s into max_w pixels, ending with "…" when cut.
+ui_truncate :: proc(s: string, max_w: f32) -> string {
+	if ui_text_width(s) <= max_w do return s
+	ell := ui_advance('…')
+	w: f32
+	for r, i in s {
+		a := ui_advance(r)
+		if w + a + ell > max_w do return fmt.tprintf("%s…", s[:i])
+		w += a
+	}
+	return s
+}
+
+// Draw UI text with y = top of the line box (ui_h tall). Returns width.
+draw_ui_text :: proc(list: ^[dynamic]Vertex, x, y: f32, s: string, fg: [4]u8) -> f32 {
+	cx := x
+	baseline := y + f32(fonts.ui_ascent)
+	for r in s {
+		g, _ := ui_glyph(r)
+		glyph_at(list, g, cx, baseline, fg)
+		cx += g.adv if g.adv > 0 else f32(fonts.cell_w * max(rune_width(r), 1))
 	}
 	return cx - x
 }

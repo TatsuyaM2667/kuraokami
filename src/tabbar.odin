@@ -73,7 +73,8 @@ draw_tabbar :: proc(w: int) {
 	quad(&ren.ov, 0, 0, f32(w), H, alpha(0x000000, 0.18))
 	quad(&ren.ov, 0, H - 1, f32(w), H, alpha(fgc, 0.06))
 	top := f32(4)
-	ty := top + (H - top - ch) / 2 // text baseline row, vertically centered in the tab
+	uh := f32(fonts.ui_h)
+	ty := top + (H - top - uh) / 2 // UI text line box, vertically centered in the tab
 	radius := ch * 0.45
 	for tb, i in app.tabs {
 		x0 := f32(i) * tw + 3
@@ -87,16 +88,16 @@ draw_tabbar :: proc(w: int) {
 			quad(&ren.ov, x1, top + (H - top) * 0.28, x1 + 1, H - (H - top) * 0.28, alpha(fgc, 0.12))
 		}
 		show_close := tw_i >= 8 * fonts.cell_w
-		room := int(tw / cw) - (4 if show_close else 1)
-		label := truncate_cells(tab_title(tb), max(1, room))
+		room := tw - cw * (4.2 if show_close else 1.6)
+		label := ui_truncate(tab_title(tb), max(cw, room))
 		fg := alpha(fgc, 1.0 if active else 0.85 if hover else 0.5)
-		draw_label(&ren.ov, x0 + cw * 0.8, ty, label, fg)
+		draw_ui_text(&ren.ov, x0 + cw * 0.9, ty, label, fg)
 		if show_close && (active || hover) {
 			cx := x1 - cw * 1.6
 			cy := top + (H - top) / 2
 			cr := ch * 0.42
 			if hover && app.tab_hover.close do rounded_rect(&ren.ov, cx - cr, cy - cr, cx + cr, cy + cr, cr, alpha(cfg.palette[1], 0.45))
-			draw_label(&ren.ov, cx - cw / 2, cy - ch / 2, "×", alpha(fgc, 0.9 if hover && app.tab_hover.close else 0.6))
+			draw_ui_text(&ren.ov, cx - ui_advance('×') / 2, cy - uh / 2, "×", alpha(fgc, 0.9 if hover && app.tab_hover.close else 0.6))
 		}
 	}
 	// + button: a round hover highlight.
@@ -104,7 +105,7 @@ draw_tabbar :: proc(w: int) {
 	py := top + (H - top) / 2
 	pr := ch * 0.45
 	if app.tab_hover.plus do rounded_rect(&ren.ov, px - pr, py - pr, px + pr, py + pr, pr, alpha(fgc, 0.12))
-	draw_label(&ren.ov, px - cw / 2, py - ch / 2, "+", alpha(fgc, 0.9 if app.tab_hover.plus else 0.55))
+	draw_ui_text(&ren.ov, px - ui_advance('+') / 2, py - uh / 2, "+", alpha(fgc, 0.9 if app.tab_hover.plus else 0.55))
 	// Sliding accent underline with a soft glow under the active tab.
 	p := ease_out((app.now - app.tab_anim_start) / 0.25) if app.tab_prev >= 0 && cfg.animation else 1
 	from := f32(app.tab_prev if app.tab_prev >= 0 && app.tab_prev < n else app.cur)

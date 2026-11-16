@@ -41,6 +41,8 @@ Config :: struct {
 	click_to_move:  bool,
 	renderer:       string, // "" auto | "gles"
 	tab_bar:        string, // always | auto | never
+	ui_font:        string, // proportional font for the tab bar
+	ui_font_scale:  f32,
 	working_dir:    string, // home | inherit | <path>
 	fetch_logo:     string,
 	fetch_logo_size: [2]int, // cells (width, height) for image logos
@@ -94,6 +96,8 @@ config_defaults :: proc() {
 		quick_autohide   = true,
 		click_to_move    = true,
 		tab_bar          = "always",
+		ui_font          = "Noto Sans CJK JP, Noto Sans, Inter, Cantarell, DejaVu Sans, sans-serif",
+		ui_font_scale    = 0.9,
 		fetch_logo_size  = {30, 14},
 		fetch_logo_seconds = 30,
 		fetch_command    = "fastfetch",
@@ -200,6 +204,10 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 		case "quick-terminal-autohide": cfg.quick_autohide = parse_bool(v)
 		case "cursor-click-to-move": cfg.click_to_move = parse_bool(v)
 		case "working-directory": cfg.working_dir = strings.clone(v)
+		case "ui-font": cfg.ui_font = strings.clone(v)
+		case "ui-font-scale":
+			if f, ok := strconv.parse_f32(v); ok && f >= 0.5 && f <= 2 do cfg.ui_font_scale = f
+			else do bad = true
 		case "tab-bar":
 			if v == "always" || v == "auto" || v == "never" do cfg.tab_bar = strings.clone(v)
 			else do bad = true

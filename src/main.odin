@@ -545,7 +545,14 @@ draw_dividers :: proc(n: ^Node) {
 
 tab_title :: proc(tab: ^Tab) -> string {
 	t := tab.focus.term
-	return t.title if t.title != "" else "kuraokami"
+	title := t.title if t.title != "" else "kuraokami"
+	// A directory title (shell integration sets the cwd) shows just the folder name, like a browser
+	// shows the page name; commands and other titles stay as they are.
+	if (strings.has_prefix(title, "/") || strings.has_prefix(title, "~/") || strings.has_prefix(title, "…/")) && !strings.contains_rune(title, ' ') {
+		trimmed := strings.trim_right(title, "/")
+		if i := strings.last_index_byte(trimmed, '/'); i >= 0 && i + 1 < len(trimmed) do return trimmed[i + 1:]
+	}
+	return title
 }
 
 truncate_cells :: proc(s: string, maxc: int) -> string {

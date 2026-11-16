@@ -229,6 +229,8 @@ keybind = ctrl+shift+d=split_right
 | `fetch-logo-animate-seconds` | `30` | GIF・動画ロゴを再生する秒数（`0` で無制限。省電力のため既定は 30 秒で停止） |
 | `cursor-click-to-move` | `true` | プロンプトの入力行をクリックでカーソル移動 |
 | `tab-bar` | `always` | ブラウザのようなタブバーを常に表示（`auto` で 2 枚以上のときだけ、`never` で非表示） |
+| `ui-font` | `Noto Sans CJK JP, Noto Sans, …` | タブバーの文字に使うプロポーショナルフォント（候補リスト） |
+| `ui-font-scale` | `0.9` | タブバーの文字の大きさ（端末の文字に対する倍率） |
 | `working-directory` | `home` | 起動時の最初のタブのディレクトリ（`home` / `inherit`＝起動元のディレクトリ / 任意のパス）。新しいタブは今のタブのディレクトリを引き継ぐ |
 | `renderer` | `auto` | `gles` で OpenGL ES 3.0 を使う（GL 3.3 が無い環境では自動で ES に切り替え） |
 | `command` | `$SHELL` | 起動するシェル |
@@ -294,7 +296,7 @@ zsh には `ZDOTDIR` 経由で、bash には `--rcfile` 経由で読み込ませ
 
 | 機能 | 内容 |
 |---|---|
-| 入力候補 | 履歴から続きを薄く表示。`→` / `End` / `Ctrl+F` で確定（zsh-autosuggestions を使っていればそちらを優先） |
+| 入力候補 | 履歴から続きを薄く表示（失敗したコマンドは候補にしない）。履歴に無ければ入力中のファイル・ディレクトリ名を補う。`→` / `End` / `Ctrl+F` で全部、`Ctrl+→` / `Alt+→` / `Alt+F` で 1 単語ずつ確定（zsh-autosuggestions を使っていればそちらを優先） |
 | ハイライト | システムに zsh-syntax-highlighting があれば自動で読み込み。なければ内蔵版（存在するコマンドは緑、ないものは赤） |
 | 補完 | メニュー選択、大文字小文字を区別しない、部分一致、色付き、グループ表示 |
 | 履歴 | 10 万件、タブ間で共有、重複除去、スペース始まりは記録しない |

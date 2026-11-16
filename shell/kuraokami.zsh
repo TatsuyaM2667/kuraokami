@@ -12,6 +12,7 @@ _ko_osc7() {
 }
 _ko_precmd() {
   local ret=$?
+  _ko_last_status=$ret  # exit status for later hooks (the suggestion skips failed commands)
   if [[ -n $_ko_cmd_running ]]; then print -n "\e]133;D;${ret}\a"; fi
   _ko_cmd_running=
   _ko_osc7
@@ -20,6 +21,7 @@ _ko_precmd() {
 }
 _ko_preexec() {
   _ko_cmd_running=1
+  _ko_last_cmd=$1
   print -n "\e]133;C\a"
   print -rn -- $'\e]2;'"${1//[[:cntrl:]]/}"$'\a'
 }
@@ -179,17 +181,43 @@ _ko_late() {
   fi
   # Built-in history autosuggestions (skipped if zsh-autosuggestions is already loaded).
   if (( ! $+functions[_zsh_autosuggest_start] )); then
+    # Commands that failed (typos, wrong flags) are not suggested again until they succeed.
+    typeset -gA _ko_failed
+    _ko_track_failed() {
+      [[ -z $_ko_last_cmd ]] && return
+      if (( _ko_last_status == 0 )); then unset "_ko_failed[$_ko_last_cmd]"
+      elif (( _ko_last_status != 130 && _ko_last_status != 148 )); then _ko_failed[$_ko_last_cmd]=1  # not Ctrl+C / Ctrl+Z
+      fi
+      _ko_last_cmd=
+    }
+    add-zsh-hook precmd _ko_track_failed
     _ko_suggest() {
+      emulate -L zsh
       region_highlight=( ${region_highlight:#*memo=kosug} )
       POSTDISPLAY=
       [[ -z $BUFFER || $CURSOR -ne $#BUFFER || $BUFFER == *$'\n'* ]] && return
-      local -a ks=( ${(k)history[(R)${(b)BUFFER}*]} )
-      (( $#ks )) || return
-      local h=${history[${${(On)ks}[1]}]}
-      [[ $h == $BUFFER ]] && return
-      POSTDISPLAY=${h#$BUFFER}
+      local s= k h
+      # 1) newest history entry with this prefix that did not fail
+      for k in ${${(On)${(k)history[(R)${(b)BUFFER}*]}}[1,200]}; do
+        h=${history[$k]}
+        [[ $h == $BUFFER || -n ${_ko_failed[$h]} ]] && continue
+        s=${h#$BUFFER}; break
+      done
+      # 2) otherwise complete the file/directory name being typed (arguments, or anything with a /)
+      if [[ -z $s && $BUFFER != *[[:space:]] && ( $BUFFER == *[[:space:]]* || $BUFFER == */* ) ]]; then
+        local w=${BUFFER##*[[:space:]]} base
+        base=$w; [[ $w == '~/'* ]] && base=$HOME/${w#\~/}
+        local -a m=( ${~${(b)base}}*(N[1]) )
+        if (( $#m )) && [[ $m[1] != $base ]]; then
+          s=${m[1]#$base}
+          [[ -d $m[1] ]] && s+=/
+        fi
+      fi
+      [[ -z $s ]] && return
+      POSTDISPLAY=$s
       region_highlight+=( "$#BUFFER $(( $#BUFFER + $#POSTDISPLAY )) fg=8 memo=kosug" )
     }
+    # → / End / Ctrl+F: take the whole suggestion
     _ko_accept() {
       if [[ -n $POSTDISPLAY && $CURSOR -eq $#BUFFER ]]; then
         BUFFER+=$POSTDISPLAY; POSTDISPLAY=; CURSOR=$#BUFFER
@@ -197,13 +225,26 @@ _ko_late() {
         zle .${WIDGET#_ko_accept_}
       fi
     }
+    # Ctrl+→ / Alt+→ / Alt+F: take just the next word (fish-style)
+    _ko_accept_word() {
+      emulate -L zsh -o extended_glob
+      if [[ -n $POSTDISPLAY && $CURSOR -eq $#BUFFER ]]; then
+        local w=${(M)POSTDISPLAY##[[:space:]]#[^[:space:]/]#/#}
+        [[ -z $w ]] && w=${POSTDISPLAY[1]}
+        BUFFER+=$w; CURSOR=$#BUFFER
+      else
+        zle .forward-word
+      fi
+    }
     _ko_clear() { POSTDISPLAY=; region_highlight=( ${region_highlight:#*memo=kosug} ) }
     zle -N _ko_accept_forward-char _ko_accept
     zle -N _ko_accept_end-of-line _ko_accept
+    zle -N _ko_accept_word
     add-zle-hook-widget line-pre-redraw _ko_suggest
     add-zle-hook-widget line-finish _ko_clear
     bindkey '^[[C' _ko_accept_forward-char '^[OC' _ko_accept_forward-char '^F' _ko_accept_forward-char
     bindkey '^[[F' _ko_accept_end-of-line '^[OF' _ko_accept_end-of-line '^E' _ko_accept_end-of-line
+    bindkey '^[[1;5C' _ko_accept_word '^[[1;3C' _ko_accept_word '^[f' _ko_accept_word
   fi
   # Syntax highlighting: the real plugin if installed, else a light built-in (command valid/invalid).
   if (( ! $+functions[_zsh_highlight] )); then

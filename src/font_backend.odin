@@ -153,7 +153,7 @@ kf_glyph_index :: proc(p: rawptr, cp: u32) -> u32 {
 kf_has :: proc(p: rawptr, cp: u32) -> c.int {return 1 if kf_glyph_index(p, cp) != 0 else 0}
 
 // Rasterize a glyph id. color=1 means BGRA (emoji), else 8-bit coverage. scale fits bitmap fonts to px.
-kf_render_glyph :: proc(p: rawptr, gid: u32, px: c.int, w, h, left, top, pitch, color: ^c.int, scale: ^f32, buf: ^[^]u8) -> c.int {
+kf_render_glyph :: proc(p: rawptr, gid: u32, px: c.int, w, h, left, top, pitch, color: ^c.int, scale: ^f32, buf: ^[^]u8, adv: ^f32 = nil) -> c.int {
 	f := (^KFace)(p).ft
 	if FT_Load_Glyph(f, gid, FT_LOAD_RENDER | FT_LOAD_COLOR | FT_LOAD_TARGET_LIGHT) != 0 do return 0
 	g := f.glyph
@@ -161,6 +161,7 @@ kf_render_glyph :: proc(p: rawptr, gid: u32, px: c.int, w, h, left, top, pitch, 
 	left^, top^ = g.bitmap_left, g.bitmap_top
 	pitch^ = g.bitmap.pitch
 	buf^ = g.bitmap.buffer
+	if adv != nil do adv^ = f32(g.advance[0]) / 64
 	color^ = 1 if g.bitmap.pixel_mode == FT_PIXEL_MODE_BGRA else 0
 	scale^ = 1
 	if f.face_flags & FT_FACE_FLAG_SCALABLE == 0 && f.num_fixed_sizes > 0 {
@@ -268,13 +269,13 @@ when ODIN_OS != .Windows {
 
 	// Resolve family+style to a font file via fontconfig. If cp>0, the font must cover cp.
 	// strict: only accept a match whose family really is `family` (fontconfig otherwise substitutes silently).
-	kf_find :: proc(family: cstring, bold, italic: c.int, cp: u32, out: [^]u8, outlen: c.int, strict := false) -> c.int {
+	kf_find :: proc(family: cstring, bold, italic: c.int, cp: u32, out: [^]u8, outlen: c.int, strict := false, mono := true) -> c.int {
 		p := FcPatternCreate()
 		defer FcPatternDestroy(p)
 		if family != nil && len(family) > 0 do FcPatternAddString(p, "family", family)
 		FcPatternAddInteger(p, "weight", FC_WEIGHT_BOLD if bold != 0 else FC_WEIGHT_REGULAR)
 		FcPatternAddInteger(p, "slant", FC_SLANT_ITALIC if italic != 0 else FC_SLANT_ROMAN)
-		if cp == 0 do FcPatternAddInteger(p, "spacing", FC_MONO)
+		if cp == 0 && mono do FcPatternAddInteger(p, "spacing", FC_MONO)
 		cs: rawptr
 		if cp != 0 {
 			cs = FcCharSetCreate()
@@ -310,7 +311,7 @@ when ODIN_OS != .Windows {
 	}
 } else {
 	// No fontconfig on Windows: probe well-known files in the system font directory.
-	kf_find :: proc(family: cstring, bold, italic: c.int, cp: u32, out: [^]u8, outlen: c.int, strict := false) -> c.int {
+	kf_find :: proc(family: cstring, bold, italic: c.int, cp: u32, out: [^]u8, outlen: c.int, strict := false, mono := true) -> c.int {
 		dir := os.get_env("WINDIR", context.temp_allocator)
 		if dir == "" do dir = "C:\\Windows"
 		put :: proc(s: string, out: [^]u8, outlen: c.int) -> c.int {
