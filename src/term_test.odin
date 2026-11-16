@@ -355,3 +355,20 @@ test_palette_and_cmd_done :: proc(tt: ^testing.T) {
 	feed(t, "\x1b]133;D;0\x07") // D without C is ignored
 	testing.expect_value(tt, t.cmd_done.status, 3)
 }
+
+@(test)
+test_ime_enter_does_not_eat_commit :: proc(tt: ^testing.T) {
+	// Enter never produces TEXT_INPUT, so handling it must not drop the IME commit that follows.
+	e := sdl.KeyboardEvent{key = sdl.K_RETURN}
+	e.timestamp = 1_000_000_000
+	suppress_text_of(e, true)
+	testing.expect_value(tt, app.suppress_until, u64(0))
+	// A handled printable key (e.g. Ctrl+Shift+C) still drops its own text...
+	c := sdl.KeyboardEvent{key = sdl.K_C}
+	c.timestamp = 2_000_000_000
+	suppress_text_of(c, true)
+	testing.expect(tt, app.suppress_until > c.timestamp)
+	// ...but only for that keypress: text arriving later is kept.
+	testing.expect(tt, app.suppress_until < c.timestamp + 100_000_000)
+	app.suppress_until = 0
+}

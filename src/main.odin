@@ -46,7 +46,8 @@ App :: struct {
 	font_pt:       f32,
 	wake_type:     u32,
 	redraw:        bool,
-	suppress_text: bool,
+	suppress_until: u64, // event timestamp (ns): drop the TEXT_INPUT produced by a key we already handled
+	preedit_end:   u64,  // when the IME composition last ended (ns)
 	tabbar_h:      int,
 	running:       bool,
 	exec_argv:     []string,
@@ -960,21 +961,25 @@ search_key :: proc(e: sdl.KeyboardEvent) {
 }
 
 on_key :: proc(e: sdl.KeyboardEvent) {
-	app.suppress_text = false
+	app.suppress_until = 0
 	app.last_input = app.now
+	// IME composing: keys belong to the input method (Enter confirms the conversion, it must not
+	// submit the line). Also swallow the Enter that some IMEs deliver right after the commit.
+	if app.preedit != "" do return
+	if (e.key == sdl.K_RETURN || e.key == sdl.K_KP_ENTER) && app.preedit_end != 0 && e.timestamp - app.preedit_end < 80_000_000 do return
 	if app.search_on {
 		search_key(e)
-		app.suppress_text = e.key < 0x40000000 && e.mod & sdl.KMOD_CTRL != {}
+		suppress_text_of(e, e.mod & sdl.KMOD_CTRL != {})
 		return
 	}
 	if app.palette_on {
 		palette_key(e)
-		app.suppress_text = e.key < 0x40000000 && e.mod & sdl.KMOD_CTRL != {}
+		suppress_text_of(e, e.mod & sdl.KMOD_CTRL != {})
 		return
 	}
 	if b, ok := find_bind(e.key, e.mod); ok {
 		run_action(b)
-		app.suppress_text = true
+		suppress_text_of(e, true)
 		return
 	}
 	t := focused()
@@ -989,7 +994,7 @@ on_key :: proc(e: sdl.KeyboardEvent) {
 		}
 		if s := kitty_encode(flags, e.key, mods_of(e.mod), 2 if e.repeat else 1, text); s != "" {
 			send(s)
-			app.suppress_text = true
+			suppress_text_of(e, true)
 			return
 		}
 		if is_modifier_key(e.key) do return
@@ -998,7 +1003,7 @@ on_key :: proc(e: sdl.KeyboardEvent) {
 	alt := e.mod & sdl.KMOD_ALT != {}
 	if s := special_key(t, e.key, e.mod); s != "" {
 		send(s)
-		app.suppress_text = true
+		suppress_text_of(e, true)
 		return
 	}
 	if ctrl {
@@ -1017,7 +1022,7 @@ on_key :: proc(e: sdl.KeyboardEvent) {
 		if b >= 0 {
 			bytes := [2]u8{0x1b, u8(b)}
 			send(string(bytes[:] if alt else bytes[1:]))
-			app.suppress_text = true
+			suppress_text_of(e, true)
 		}
 	}
 }
@@ -1032,8 +1037,16 @@ on_key_up :: proc(e: sdl.KeyboardEvent) {
 	if s := kitty_encode(flags, e.key, mods_of(e.mod), 3, 0); s != "" do pty_write(t, transmute([]u8)s)
 }
 
-on_text :: proc(text: string) {
-	if app.suppress_text {app.suppress_text = false; return}
+// Only the text produced by the very key we handled is dropped (matched by timestamp), and only
+// for keys that produce text at all: Enter/Tab/arrows never do, so an IME commit that follows
+// them is never lost.
+suppress_text_of :: proc(e: sdl.KeyboardEvent, on: bool) {
+	makes_text := e.key >= 32 && e.key < 0x40000000 && e.key != 127
+	app.suppress_until = e.timestamp + 50_000_000 if on && makes_text else 0
+}
+
+on_text :: proc(text: string, ts: u64) {
+	if app.suppress_until != 0 && ts <= app.suppress_until {app.suppress_until = 0; return}
 	delete(app.preedit)
 	app.preedit = ""
 	if app.search_on {
@@ -1550,6 +1563,11 @@ handle_event :: proc(ev: ^sdl.Event) {
 	case .WINDOW_EXPOSED: app.redraw = true
 	case .WINDOW_FOCUS_GAINED, .WINDOW_FOCUS_LOST:
 		if ev.type == .WINDOW_FOCUS_LOST && app.quick && cfg.quick_autohide && !app.quick_hidden do quick_hide()
+		if ev.type == .WINDOW_FOCUS_LOST && app.preedit != "" {
+			// The IME may never send the "composition ended" event once we lose focus.
+			delete(app.preedit)
+			app.preedit = ""
+		}
 		app.redraw = true
 		app.last_input = app.now
 		if ev.type == .WINDOW_FOCUS_GAINED && ODIN_OS != .Linux && config_file_mtime() != config_mtime do apply_config()
@@ -1559,8 +1577,11 @@ handle_event :: proc(ev: ^sdl.Event) {
 		}
 	case .KEY_DOWN: on_key(ev.key)
 	case .KEY_UP: on_key_up(ev.key)
-	case .TEXT_INPUT: on_text(string(ev.text.text))
+	case .TEXT_INPUT: on_text(string(ev.text.text), ev.text.timestamp)
 	case .TEXT_EDITING:
+		if ev.edit.text == nil || len(ev.edit.text) == 0 {
+			if app.preedit != "" do app.preedit_end = ev.edit.timestamp
+		}
 		delete(app.preedit)
 		app.preedit = strings.clone(string(ev.edit.text))
 		app.redraw = true
