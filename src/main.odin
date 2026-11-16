@@ -199,7 +199,7 @@ shell_argv :: proc() -> ([]string, [][2]string) {
 				// Wait (max ~0.6s) until the tiling WM has settled the size, so the fetch isn't printed at the
 				// pre-tile size and then rewrapped.
 				WAIT :: `p=; n=0; i=0; while [ $i -lt 12 ]; do c=$(stty size 2>/dev/null); if [ "$c" = "$p" ]; then n=$((n+1)); [ $n -ge 2 ] && break; else n=0; fi; p=$c; i=$((i+1)); sleep 0.05; done; `
-				append(&out, "/bin/sh", "-c", fmt.tprintf("%s%s; exec \"$0\" \"$@\"", WAIT, cfg.fetch_command))
+				append(&out, "/bin/sh", "-c", fmt.tprintf("%s%s%s; exec \"$0\" \"$@\"", WAIT, cfg.fetch_command, fetch_logo_args()))
 				append(&out, ..argv)
 				return out[:], env
 			}
@@ -1550,6 +1550,8 @@ main :: proc() {
 				}
 			}
 		}
+		// Animated fetch logo: wake exactly at its next frame (15 fps), not every vsync.
+		if lms := logo_anim_tick(); lms >= 0 do timeout = lms if timeout < 0 else min(timeout, lms)
 		got := sdl.WaitEvent(&ev) if timeout < 0 else sdl.WaitEventTimeout(&ev, timeout)
 		app.now = now_s()
 		if got {

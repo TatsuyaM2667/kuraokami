@@ -39,6 +39,9 @@ Config :: struct {
 	restore_session: bool,
 	quick_autohide: bool,
 	click_to_move:  bool,
+	fetch_logo:     string,
+	fetch_logo_size: [2]int, // cells (width, height) for image logos
+	fetch_logo_seconds: f64, // how long an animated logo plays; 0 = forever
 	fetch_command:  string,
 	binds:          [dynamic]Keybind,
 }
@@ -87,6 +90,8 @@ config_defaults :: proc() {
 		restore_session  = true,
 		quick_autohide   = true,
 		click_to_move    = true,
+		fetch_logo_size  = {30, 14},
+		fetch_logo_seconds = 30,
 		fetch_command    = "fastfetch",
 	}
 	binds_defaults()
@@ -190,6 +195,17 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 		case "restore-session": cfg.restore_session = parse_bool(v)
 		case "quick-terminal-autohide": cfg.quick_autohide = parse_bool(v)
 		case "cursor-click-to-move": cfg.click_to_move = parse_bool(v)
+		case "fetch-logo": cfg.fetch_logo = strings.clone(v)
+		case "fetch-logo-size":
+			bad = true
+			if x := strings.index_any(v, "xX*"); x > 0 {
+				w, ok1 := strconv.parse_int(strings.trim_space(v[:x]))
+				h, ok2 := strconv.parse_int(strings.trim_space(v[x + 1:]))
+				if ok1 && ok2 && w >= 4 && h >= 2 && w <= 200 && h <= 100 {cfg.fetch_logo_size = {w, h}; bad = false}
+			}
+		case "fetch-logo-animate-seconds":
+			if f, ok := strconv.parse_f64(v); ok && f >= 0 do cfg.fetch_logo_seconds = f
+			else do bad = true
 		case "notify-on-command-finish-after":
 			if f, ok := strconv.parse_f64(v); ok && f >= 0 do cfg.notify_after = f
 			else do bad = true

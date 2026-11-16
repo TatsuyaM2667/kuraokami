@@ -232,3 +232,32 @@ quick_listen :: proc(on_toggle: proc()) -> bool {
 quick_cleanup :: proc() {
 	_ = posix.unlink(strings.clone_to_cstring(quick_socket_path(), context.temp_allocator))
 }
+
+// Run a helper (no shell) and return its stdout, at most `limit` bytes. Used for ffmpeg.
+run_capture :: proc(args: []string, limit: int) -> ([]u8, bool) {
+	if len(args) == 0 do return nil, false
+	argv := make([]cstring, len(args) + 1, context.temp_allocator)
+	for a, i in args do argv[i] = strings.clone_to_cstring(a, context.temp_allocator)
+	fds: [2]posix.FD
+	if posix.pipe(&fds) != .OK do return nil, false
+	pid := fork()
+	if pid < 0 {posix.close(fds[0]); posix.close(fds[1]); return nil, false}
+	if pid == 0 {
+		posix.dup2(fds[1], 1)
+		posix.close(fds[0])
+		posix.close(fds[1])
+		execvp(argv[0], raw_data(argv))
+		_exit(127)
+	}
+	posix.close(fds[1])
+	defer posix.close(fds[0])
+	out := make([dynamic]u8)
+	buf: [65536]u8
+	for {
+		n := read(i32(fds[0]), &buf[0], len(buf))
+		if n <= 0 do break
+		if len(out) + int(n) > limit {kill(pid, 9); delete(out); return nil, false}
+		append(&out, ..buf[:n])
+	}
+	return out[:], len(out) > 0
+}

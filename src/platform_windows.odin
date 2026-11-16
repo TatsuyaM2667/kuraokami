@@ -121,3 +121,6 @@ remove_file :: proc(path: string) {_ = os.remove(path)}
 quick_send_toggle :: proc() -> bool {return false}
 quick_listen :: proc(on_toggle: proc()) -> bool {return false}
 quick_cleanup :: proc() {}
+
+// shortcut: no helper-process capture on Windows yet; animated fetch logos need it (ffmpeg).
+run_capture :: proc(args: []string, limit: int) -> ([]u8, bool) {return nil, false}

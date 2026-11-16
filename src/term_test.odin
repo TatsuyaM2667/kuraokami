@@ -381,3 +381,27 @@ test_fish_integration_env :: proc(tt: ^testing.T) {
 	for e in env do if e[0] == "XDG_DATA_DIRS" && strings.contains(e[1], "/xdg:") do found = true
 	testing.expect(tt, found)
 }
+
+@(test)
+test_reflow_keeps_image_anchor :: proc(tt: ^testing.T) {
+	t := mk(10, 6)
+	defer {term_destroy(t); free(t)}
+	// A long wrapped line above the image: narrowing the window adds rows above it.
+	feed(t, "abcdefghijklmnopqrs\r\n")
+	px := [3]u8{1, 2, 3}
+	e, _ := base64.encode(px[:], allocator = context.temp_allocator)
+	feed(t, strings.concatenate({"\x1b_Ga=T,f=24,s=1,v=1,i=5,c=1,r=1,C=1;", e, "\x1b\\X"}, context.temp_allocator))
+	// The image sits on the line that starts with "X".
+	img_line :: proc(t: ^Term) -> string {
+		for p in t.gfx.placements {
+			l, ok := abs_line(t, p.abs_row)
+			if ok do return string([]u8{u8(l[0].ch)})
+		}
+		return "?"
+	}
+	testing.expect_value(tt, img_line(t), "X")
+	term_resize(t, 5, 6)
+	testing.expect_value(tt, img_line(t), "X")
+	term_resize(t, 20, 6)
+	testing.expect_value(tt, img_line(t), "X")
+}

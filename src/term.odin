@@ -295,7 +295,9 @@ is_blank :: #force_inline proc(c: Cell) -> bool {
 }
 
 // Rewrap every logical line of the primary screen to the new width, tracking the cursor.
-reflow :: proc(t: ^Term, r: ^Ring, cols, rows, cap_: int) -> (Ring, int, int) {
+// line_map (optional, len r.count): receives the new ring index of each old line (-1 if dropped),
+// so anchors such as images and prompt marks can follow their text.
+reflow :: proc(t: ^Term, r: ^Ring, cols, rows, cap_: int, line_map: []int = nil) -> (Ring, int, int) {
 	ci := r.count - t.rows + t.cy
 	out := make([dynamic]Line)
 	defer delete(out)
@@ -306,6 +308,7 @@ reflow :: proc(t: ^Term, r: ^Ring, cols, rows, cap_: int) -> (Ring, int, int) {
 	for i < r.count {
 		j := i
 		for j < r.count - 1 && ring_ln(r, j).wrapped do j += 1
+		out_first := len(out)
 		clear(&cells)
 		cur_off := -1
 		for k in i ..= j {
@@ -341,6 +344,7 @@ reflow :: proc(t: ^Term, r: ^Ring, cols, rows, cap_: int) -> (Ring, int, int) {
 			if pos >= n do break
 		}
 		if cur_off >= 0 && cur_row < 0 {cur_row, cur_col = len(out) - 1, min(cur_off, cols - 1)}
+		if line_map != nil do for k in i ..= j do line_map[k] = out_first + min(k - i, len(out) - out_first - 1)
 		i = j + 1
 	}
 	if cur_row < 0 do cur_row = len(out) - 1
@@ -355,6 +359,7 @@ reflow :: proc(t: ^Term, r: ^Ring, cols, rows, cap_: int) -> (Ring, int, int) {
 	resize(&out, keep)
 	for len(out) < rows do append(&out, new_line(cols))
 	start := max(0, len(out) - cap_)
+	if line_map != nil do for &m in line_map do m = m - start if m >= start && m < len(out) else -1
 	for k in 0 ..< start do delete(out[k].cells)
 	nr := Ring{buf = make([]Line, max(cap_, rows))}
 	for k in start ..< len(out) {
@@ -396,17 +401,20 @@ term_resize :: proc(t: ^Term, cols, rows: int) {
 	old_sb := t.primary.count - t.rows
 	np: Ring
 	pcy, pcx: int
+	old_base := t.total_pushed - i64(old_sb) // absolute line number of ring index 0
+	line_map := make([]int, t.primary.count, context.temp_allocator)
 	if t.use_alt {
 		// Reflow primary using the saved cursor.
 		scx, scy := t.cx, t.cy
 		t.cx, t.cy = min(t.saved.x, t.cols - 1), min(t.saved.y, t.rows - 1)
-		np, pcy, pcx = reflow(t, &t.primary, cols, rows, rows + t.scrollback)
+		np, pcy, pcx = reflow(t, &t.primary, cols, rows, rows + t.scrollback, line_map)
 		t.cx, t.cy = scx, scy
 	} else {
-		np, pcy, pcx = reflow(t, &t.primary, cols, rows, rows + t.scrollback)
+		np, pcy, pcx = reflow(t, &t.primary, cols, rows, rows + t.scrollback, line_map)
 	}
 	na, acy := ring_resize(t, &t.alt, rows, cols, rows, t.cy if t.use_alt else 0)
 	t.total_pushed += i64((np.count - rows) - old_sb)
+	remap_anchors(t, line_map, old_base, t.total_pushed - i64(np.count - rows))
 	ring_free(&t.primary)
 	ring_free(&t.alt)
 	t.primary, t.alt = np, na
@@ -1306,4 +1314,25 @@ Cmd_Done :: struct {
 	seconds: f64,
 	status:  int,
 	pending: bool,
+}
+
+// After a reflow, move primary-screen anchors (images, prompt marks) with the lines they belong to.
+remap_anchors :: proc(t: ^Term, line_map: []int, old_base, new_base: i64) {
+	remap :: proc(line_map: []int, old_base, new_base, abs: i64) -> (i64, bool) {
+		i := abs - old_base
+		if i < 0 || i >= i64(len(line_map)) || line_map[i] < 0 do return 0, false
+		return new_base + i64(line_map[i]), true
+	}
+	g := &t.gfx
+	for i := len(g.placements) - 1; i >= 0; i -= 1 {
+		p := &g.placements[i]
+		if p.abs_row < -(1 << 39) do continue // alt-screen placement: not reflowed
+		if a, ok := remap(line_map, old_base, new_base, p.abs_row); ok do p.abs_row = a
+		else do unordered_remove(&g.placements, i)
+	}
+	n := 0
+	for pr in t.prompts {
+		if a, ok := remap(line_map, old_base, new_base, pr); ok {t.prompts[n] = a; n += 1}
+	}
+	resize(&t.prompts, n)
 }

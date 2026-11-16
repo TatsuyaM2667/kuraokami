@@ -2,9 +2,9 @@ package kuraokami
 
 import "core:hash"
 
-// Minimal PNG writer (stored/uncompressed deflate) for the KURAOKAMI_SHOT debug dump.
-// px is bottom-up RGB as read back from OpenGL.
-png_encode_rgb :: proc(px: []u8, w, h: int, allocator := context.temp_allocator) -> []u8 {
+// Minimal PNG writer (stored/uncompressed deflate): debug frame dumps and fetch-logo frames.
+// channels: 3 (RGB) or 4 (RGBA). bottom_up: rows come from OpenGL read-back.
+png_encode :: proc(px: []u8, w, h, channels: int, bottom_up := false, allocator := context.temp_allocator) -> []u8 {
 	out := make([dynamic]u8, allocator)
 	be32 :: proc(out: ^[dynamic]u8, v: u32) {append(out, u8(v >> 24), u8(v >> 16), u8(v >> 8), u8(v))}
 	chunk :: proc(out: ^[dynamic]u8, kind: string, data: []u8) {
@@ -18,12 +18,14 @@ png_encode_rgb :: proc(px: []u8, w, h: int, allocator := context.temp_allocator)
 	ihdr: [13]u8
 	ihdr[0], ihdr[1], ihdr[2], ihdr[3] = u8(w >> 24), u8(w >> 16), u8(w >> 8), u8(w)
 	ihdr[4], ihdr[5], ihdr[6], ihdr[7] = u8(h >> 24), u8(h >> 16), u8(h >> 8), u8(h)
-	ihdr[8], ihdr[9] = 8, 2 // 8-bit RGB
+	ihdr[8], ihdr[9] = 8, 6 if channels == 4 else 2 // 8-bit RGBA / RGB
 	chunk(&out, "IHDR", ihdr[:])
+	stride := w * channels
 	raw := make([dynamic]u8, allocator)
-	for y := h - 1; y >= 0; y -= 1 {
+	for i in 0 ..< h {
+		y := h - 1 - i if bottom_up else i
 		append(&raw, 0) // filter: none
-		append(&raw, ..px[y * w * 3:(y + 1) * w * 3])
+		append(&raw, ..px[y * stride:(y + 1) * stride])
 	}
 	z := make([dynamic]u8, allocator)
 	append(&z, 0x78, 0x01)
@@ -36,4 +38,8 @@ png_encode_rgb :: proc(px: []u8, w, h: int, allocator := context.temp_allocator)
 	chunk(&out, "IDAT", z[:])
 	chunk(&out, "IEND", nil)
 	return out[:]
+}
+
+png_encode_rgb :: proc(px: []u8, w, h: int, allocator := context.temp_allocator) -> []u8 {
+	return png_encode(px, w, h, 3, true, allocator)
 }

@@ -17,6 +17,7 @@ Image :: struct {
 	tex:     u32,
 	version: u32, // bumped when pixels change; renderer re-uploads when it differs
 	tex_ver: u32,
+	src:     string, // file it was loaded from (t=f), lets the fetch-logo animator find it
 }
 
 Placement :: struct {
@@ -56,6 +57,7 @@ IMAGE_BUDGET :: 320 * 1024 * 1024
 gfx_destroy :: proc(g: ^Graphics) {
 	for _, img in g.images {
 		delete(img.pixels)
+		delete(img.src)
 		free(img)
 	}
 	delete(g.images)
@@ -81,6 +83,7 @@ image_free :: proc(g: ^Graphics, id: u32) {
 	if img.tex != 0 do append(&g.dead_tex, img.tex)
 	g.bytes -= len(img.pixels)
 	delete(img.pixels)
+	delete(img.src)
 	free(img)
 	delete_key(&g.images, id)
 }
@@ -288,6 +291,13 @@ kitty_execute :: proc(t: ^Term, k: ^Kitty_Ctrl, payload: []u8) {
 			g.images[k.i] = img
 		}
 		img.pixels, img.w, img.h = px, w, h
+		if k.t == 'f' {
+			if raw, e := base64.decode(string(payload), allocator = context.temp_allocator); e == nil {
+				p, _ := filepath.clean(string(raw), context.temp_allocator)
+				delete(img.src)
+				img.src = strings.clone(p)
+			}
+		}
 		img.version += 1
 		g.bytes += len(px)
 		gfx_evict(g)
