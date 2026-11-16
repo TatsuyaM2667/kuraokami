@@ -13,8 +13,10 @@ ROOT="$DESTDIR$PREFIX"
 
 put() { # put <mode> <src> <dest>
 	mkdir -p "$(dirname "$3")"
-	cp "$2" "$3"
-	chmod "$1" "$3"
+	# Copy then rename: replacing a running binary in place fails with "Text file busy".
+	cp "$2" "$3.new.$$"
+	chmod "$1" "$3.new.$$"
+	mv -f "$3.new.$$" "$3"
 }
 
 put 755 kuraokami "$ROOT/bin/kuraokami"

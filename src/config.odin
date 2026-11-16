@@ -38,6 +38,7 @@ Config :: struct {
 	notify_after:   f64, // seconds; 0 = off
 	restore_session: bool,
 	quick_autohide: bool,
+	click_to_move:  bool,
 	fetch_command:  string,
 	binds:          [dynamic]Keybind,
 }
@@ -85,6 +86,7 @@ config_defaults :: proc() {
 		notify_after     = 10,
 		restore_session  = true,
 		quick_autohide   = true,
+		click_to_move    = true,
 		fetch_command    = "fastfetch",
 	}
 	binds_defaults()
@@ -187,6 +189,7 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 		case "clipboard-paste-protection": cfg.paste_protection = parse_bool(v)
 		case "restore-session": cfg.restore_session = parse_bool(v)
 		case "quick-terminal-autohide": cfg.quick_autohide = parse_bool(v)
+		case "cursor-click-to-move": cfg.click_to_move = parse_bool(v)
 		case "notify-on-command-finish-after":
 			if f, ok := strconv.parse_f64(v); ok && f >= 0 do cfg.notify_after = f
 			else do bad = true

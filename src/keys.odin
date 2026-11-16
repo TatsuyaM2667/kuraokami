@@ -30,7 +30,7 @@ DEFAULT_BINDS := [?]string {
 	"ctrl+shift+c=copy", "ctrl+shift+v=paste", "shift+insert=paste_selection", "ctrl+shift+a=select_all",
 	"ctrl+shift+t=new_tab", "ctrl+shift+w=close_pane", "ctrl+shift+e=split_right", "ctrl+shift+o=split_down",
 	"ctrl+alt+left=focus_left", "ctrl+alt+right=focus_right", "ctrl+alt+up=focus_up", "ctrl+alt+down=focus_down",
-	"ctrl+tab=next_tab", "ctrl+shift+tab=prev_tab", "ctrl+shift+right=next_tab", "ctrl+shift+left=prev_tab",
+	"ctrl+tab=next_tab", "ctrl+shift+tab=prev_tab", "ctrl+pagedown=next_tab", "ctrl+pageup=prev_tab", "ctrl+shift+right=next_tab", "ctrl+shift+left=prev_tab",
 	"ctrl+shift+alt+left=resize_left", "ctrl+shift+alt+right=resize_right", "ctrl+shift+alt+up=resize_up",
 	"ctrl+shift+alt+down=resize_down", "ctrl+shift+alt+equal=equalize_splits",
 	"shift+pageup=scroll_page_up", "shift+pagedown=scroll_page_down", "ctrl+shift+pageup=scroll_page_up",
@@ -42,6 +42,8 @@ DEFAULT_BINDS := [?]string {
 	"ctrl+shift+1=goto_tab:1", "ctrl+shift+2=goto_tab:2", "ctrl+shift+3=goto_tab:3", "ctrl+shift+4=goto_tab:4",
 	"ctrl+shift+5=goto_tab:5", "ctrl+shift+6=goto_tab:6", "ctrl+shift+7=goto_tab:7", "ctrl+shift+8=goto_tab:8",
 	"ctrl+shift+9=goto_tab:9",
+	"alt+1=goto_tab:1", "alt+2=goto_tab:2", "alt+3=goto_tab:3", "alt+4=goto_tab:4", "alt+5=goto_tab:5",
+	"alt+6=goto_tab:6", "alt+7=goto_tab:7", "alt+8=goto_tab:8", "alt+9=goto_tab:9",
 }
 
 when ODIN_OS == .Darwin {

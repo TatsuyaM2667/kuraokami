@@ -100,6 +100,74 @@ add-zsh-hook precmd _ko_prompt_pre
 PROMPT=$'\n%F{#4b5675}╭─%f %F{#c8a2ff}%n@%m%f %F{#4b5675}in%f %F{#7ab8ff}%B %(4~|…/%3~|%~)%b%f${vcs_info_msg_0_}\n%F{#4b5675}╰─%f%(?.%F{#7ab8ff}.%F{#ff7a8a})❯%f '
 RPROMPT='${_ko_took}%(?..%F{#ff7a8a}✘ %?%f  )%(1j.%F{#ffd58a}✦%j%f  .)%F{#4b5675}%*%f'
 
+# ---------------- fish-style abbreviations ----------------
+# `gs<Space>` expands to `git status` in place, so history and the screen show the real command.
+# Add your own in ~/.zshrc:  abbr dc='docker compose'   (list them with `abbr`, Ctrl+Space = no expansion)
+typeset -gA _ko_abbr
+abbr() {
+  if (( $# == 0 )); then
+    local k; for k in ${(ok)_ko_abbr}; do print -r -- "$k=${_ko_abbr[$k]}"; done
+    return
+  fi
+  local a; for a in "$@"; do _ko_abbr[${a%%=*}]=${a#*=}; done
+}
+abbr gs='git status' ga='git add' gc='git commit' gco='git checkout' gsw='git switch' \
+     gd='git diff' gp='git push' gpl='git pull' gl='git log --oneline --graph --decorate -20'
+_ko_abbr_expand() {
+  local w=${LBUFFER##*[[:space:]\;\|\&]}
+  local pre=${LBUFFER%$w}
+  local p=${pre//[[:space:]]/}
+  [[ -n $w && -n ${_ko_abbr[$w]} && ( -z $p || $p == *[\;\|\&] ) ]] && LBUFFER=$pre${_ko_abbr[$w]}
+}
+_ko_abbr_space() { _ko_abbr_expand; zle self-insert }
+_ko_abbr_enter() { _ko_abbr_expand; zle accept-line }
+zle -N _ko_abbr_space
+zle -N _ko_abbr_enter
+bindkey ' ' _ko_abbr_space
+bindkey '^M' _ko_abbr_enter
+bindkey '^ ' magic-space
+
+# ---------------- j: jump to frequently used directories (zoxide/z-like) ----------------
+#   j kura   -> cd to the most used directory whose path contains "kura";  j  -> list
+_ko_dirs=${XDG_DATA_HOME:-$HOME/.local/share}/kuraokami/dirs
+_ko_chpwd_rank() {
+  [[ $PWD == $HOME || $PWD == / ]] && return
+  local -A s; local n d
+  [[ -r $_ko_dirs ]] && while IFS=$'\t' read -r n d; do s[$d]=$n; done < $_ko_dirs
+  s[$PWD]=$(( ${s[$PWD]:-0} + 1 ))
+  mkdir -p ${_ko_dirs:h}
+  { for d in ${(k)s}; do print -r -- "${s[$d]}"$'\t'"$d"; done } | sort -rn | head -500 >| $_ko_dirs
+}
+add-zsh-hook chpwd _ko_chpwd_rank
+j() {
+  [[ $# -eq 0 ]] && { sort -rn $_ko_dirs 2>/dev/null | head -20; return }
+  local q=${(L)${(j:*:)@}} n d
+  while IFS=$'\t' read -r n d; do
+    [[ ${(L)d} == *${~q}* && -d $d ]] && { cd -- $d; return }
+  done < <(sort -rn $_ko_dirs 2>/dev/null)
+  print -u2 "j: '$*' に一致するディレクトリがありません"; return 1
+}
+
+# ---------------- "did you mean" for unknown commands ----------------
+command_not_found_handler() {
+  emulate -L zsh; setopt extended_glob
+  print -u2 "zsh: command not found: $1"
+  local e=1; (( $#1 > 5 )) && e=2
+  local -a c=( ${(k)commands[(I)(#a$e)$1]} ${(k)functions[(I)(#a$e)$1]} ${(k)aliases[(I)(#a$e)$1]} )
+  c=( ${${(u)c}[1,5]} )
+  (( $#c )) && print -u2 "  もしかして: ${(j:, :)c}"
+  return 127
+}
+
+# ---------------- small conveniences ----------------
+mkcd() { mkdir -p -- "$1" && cd -- "$1" }
+alias -- -='cd -'
+bindkey '^R' history-incremental-pattern-search-backward
+# Ctrl+Z on an empty line resumes the last suspended job (toggle with the job's own Ctrl+Z).
+_ko_fg() { if [[ -z $BUFFER ]]; then BUFFER=fg; zle accept-line; else zle push-input; fi }
+zle -N _ko_fg
+bindkey '^Z' _ko_fg
+
 # ---------------- after ~/.zshrc: completion init, suggestions, highlighting ----------------
 _ko_late() {
   add-zsh-hook -d precmd _ko_late

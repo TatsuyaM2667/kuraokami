@@ -242,8 +242,6 @@ test_shell_integration :: proc(tt: ^testing.T) {
 	argv, env = integrate({"/bin/bash", "-c", "true"}) // explicit args: untouched
 	testing.expect_value(tt, len(argv), 3)
 	testing.expect(tt, env == nil)
-	argv, env = integrate({"/usr/bin/fish"})
-	testing.expect(tt, env == nil)
 }
 
 @(test)
@@ -371,4 +369,15 @@ test_ime_enter_does_not_eat_commit :: proc(tt: ^testing.T) {
 	// ...but only for that keypress: text arriving later is kept.
 	testing.expect(tt, app.suppress_until < c.timestamp + 100_000_000)
 	app.suppress_until = 0
+}
+
+@(test)
+test_fish_integration_env :: proc(tt: ^testing.T) {
+	saved := integration_ready
+	defer integration_ready = saved
+	integration_ready = true
+	_, env := integrate({"/usr/bin/fish"})
+	found := false
+	for e in env do if e[0] == "XDG_DATA_DIRS" && strings.contains(e[1], "/xdg:") do found = true
+	testing.expect(tt, found)
 }

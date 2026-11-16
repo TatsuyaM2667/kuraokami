@@ -9,6 +9,7 @@ import "core:strings"
 ZSH_ENV :: #load("../shell/zshenv", string)
 ZSH_INTEG :: #load("../shell/kuraokami.zsh", string)
 BASH_INTEG :: #load("../shell/kuraokami.bash", string)
+FISH_INTEG :: #load("../shell/fish/vendor_conf.d/kuraokami.fish", string)
 
 integration_dir :: proc() -> string {
 	when ODIN_OS == .Windows do return ""
@@ -24,8 +25,9 @@ integration_ready: bool
 install_shell_integration :: proc() {
 	dir := integration_dir()
 	if dir == "" || !cfg.shell_integration do return
-	if err := os.make_directory_all(dir); err != nil && err != os.General_Error.Exist do return // Exist = already there
-	files := [?][2]string{{".zshenv", ZSH_ENV}, {"kuraokami.zsh", ZSH_INTEG}, {"kuraokami.bash", BASH_INTEG}}
+	fish_dir := fmt.tprintf("%s/xdg/fish/vendor_conf.d", dir)
+	if err := os.make_directory_all(fish_dir); err != nil && err != os.General_Error.Exist do return // Exist = already there
+	files := [?][2]string{{".zshenv", ZSH_ENV}, {"kuraokami.zsh", ZSH_INTEG}, {"kuraokami.bash", BASH_INTEG}, {"xdg/fish/vendor_conf.d/kuraokami.fish", FISH_INTEG}}
 	for f in files {
 		path := fmt.tprintf("%s/%s", dir, f[0])
 		if old, err := os.read_entire_file_from_path(path, context.temp_allocator); err == nil && string(old) == f[1] do continue
@@ -52,6 +54,12 @@ integrate :: proc(argv: []string) -> ([]string, [][2]string) {
 			out[0], out[1], out[2] = argv[0], "--rcfile", fmt.tprintf("%s/kuraokami.bash", dir)
 			return out, env[:]
 		}
+	case "fish":
+		// fish reads vendor_conf.d from every XDG_DATA_DIRS entry; the script removes ours again.
+		data := os.get_env("XDG_DATA_DIRS", context.temp_allocator)
+		if data == "" do data = "/usr/local/share:/usr/share"
+		append(&env, [2]string{"XDG_DATA_DIRS", fmt.tprintf("%s/xdg:%s", dir, data)})
+		return argv, env[:]
 	}
 	return argv, nil
 }

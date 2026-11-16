@@ -1227,6 +1227,7 @@ on_mouse_button :: proc(e: sdl.MouseButtonEvent) {
 			w, h: c.int
 			_ = sdl.GetWindowSizeInPixels(app.window, &w, &h)
 			i := px / max(1, int(w) / len(app.tabs))
+			if e.button == 1 && e.clicks == 2 {new_tab(); return} // double-click the tab bar: new tab
 			if i >= len(app.tabs) do return
 			if e.button == 2 {
 				tab := app.tabs[i]
@@ -1280,6 +1281,9 @@ on_mouse_button :: proc(e: sdl.MouseButtonEvent) {
 		app.redraw = true
 	} else {
 		app.selecting = false
+		// Click (no drag) on the line being typed at a shell prompt: move the cursor there,
+		// like a text editor. Only with shell integration (OSC 133) and outside full-screen apps.
+		if !app.sel.active && e.clicks == 1 && cfg.click_to_move && app.sel.term == t do click_to_move(t, x, y)
 		if app.sel.active && cfg.copy_on_select {
 			if s := selection_text(); s != "" do _ = sdl.SetPrimarySelectionText(strings.clone_to_cstring(s, context.temp_allocator))
 		}
@@ -1345,8 +1349,26 @@ on_mouse_motion :: proc(e: sdl.MouseMotionEvent) {
 
 wheel_accum: f32
 
+click_to_move :: proc(t: ^Term, x, y: int) {
+	sync.mutex_lock(&t.mu)
+	at_prompt := !t.use_alt && !t.cmd_running && len(t.prompts) > 0 && t.view_off == 0 &&
+		view_abs(t, y) >= t.prompts[len(t.prompts) - 1] && t.mouse_mode == 0
+	delta := (y - t.cy) * t.cols + (x - t.cx)
+	app_cursor := t.app_cursor
+	sync.mutex_unlock(&t.mu)
+	if !at_prompt || delta == 0 || abs(delta) > 2000 do return
+	key := ("\x1bOC" if app_cursor else "\x1b[C") if delta > 0 else ("\x1bOD" if app_cursor else "\x1b[D")
+	b := strings.builder_make(context.temp_allocator)
+	for _ in 0 ..< abs(delta) do strings.write_string(&b, key)
+	send(strings.to_string(b))
+}
+
 on_wheel :: proc(e: sdl.MouseWheelEvent) {
 	px, py := int(e.mouse_x * app.density), int(e.mouse_y * app.density)
+	if app.tabbar_h > 0 && py < app.tabbar_h && e.integer_y != 0 { // wheel over the tab bar: switch tabs
+		switch_tab((app.cur + (len(app.tabs) - 1 if e.integer_y > 0 else 1)) % len(app.tabs))
+		return
+	}
 	n := pane_at(px, py)
 	if n == nil do return
 	t := n.term
