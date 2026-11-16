@@ -68,7 +68,7 @@ session_restore :: proc() -> bool {
 		i^ += 1
 		if strings.has_prefix(line, "leaf ") || line == "leaf" {
 			cwd := strings.trim_space(line[min(5, len(line)):])
-			if cwd != "" && !os.is_dir(cwd) do cwd = "" // directory gone since last time
+			if cwd == "" || !os.is_dir(cwd) do cwd = start_dir() // directory gone since last time
 			t := new_term(cwd)
 			if t == nil do return nil
 			n := new(Node)

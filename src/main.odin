@@ -239,7 +239,9 @@ switch_tab :: proc(i: int) {
 }
 
 new_tab :: proc() {
-	cwd := shell_cwd(focused()) if len(app.tabs) > 0 else ""
+	// The first terminal starts in working-directory (home by default), not wherever the launcher
+	// happened to run us; later tabs follow the current tab like a browser.
+	cwd := shell_cwd(focused()) if len(app.tabs) > 0 else start_dir()
 	t := new_term(cwd)
 	if t == nil {show_toast("failed to start shell"); return}
 	n := new(Node)
@@ -1615,4 +1617,14 @@ handle_event :: proc(ev: ^sdl.Event) {
 		q, _ := strings.replace_all(p, "'", "'\\''", context.temp_allocator)
 		paste(fmt.tprintf("'%s' ", q))
 	}
+}
+
+// working-directory = home (default) | inherit (the directory kuraokami was started in) | <path>
+start_dir :: proc() -> string {
+	switch cfg.working_dir {
+	case "inherit": return ""
+	case "", "home": return home_dir()
+	}
+	p := expand_home(cfg.working_dir)
+	return p if os.is_dir(p) else home_dir()
 }

@@ -41,6 +41,7 @@ Config :: struct {
 	click_to_move:  bool,
 	renderer:       string, // "" auto | "gles"
 	tab_bar:        string, // always | auto | never
+	working_dir:    string, // home | inherit | <path>
 	fetch_logo:     string,
 	fetch_logo_size: [2]int, // cells (width, height) for image logos
 	fetch_logo_seconds: f64, // how long an animated logo plays; 0 = forever
@@ -89,7 +90,7 @@ config_defaults :: proc() {
 		clipboard_write  = true,
 		paste_protection = true,
 		notify_after     = 10,
-		restore_session  = true,
+		restore_session  = false,
 		quick_autohide   = true,
 		click_to_move    = true,
 		tab_bar          = "always",
@@ -198,6 +199,7 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 		case "restore-session": cfg.restore_session = parse_bool(v)
 		case "quick-terminal-autohide": cfg.quick_autohide = parse_bool(v)
 		case "cursor-click-to-move": cfg.click_to_move = parse_bool(v)
+		case "working-directory": cfg.working_dir = strings.clone(v)
 		case "tab-bar":
 			if v == "always" || v == "auto" || v == "never" do cfg.tab_bar = strings.clone(v)
 			else do bad = true
