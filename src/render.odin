@@ -264,7 +264,13 @@ void main() {
 	vec4 t = texture(tex, v_uv);
 	if (v_mode < 0.5) o = v_col;
 	else if (v_mode < 1.5) o = vec4(v_col.rgb, v_col.a * t.a);
-	else o = vec4(t.rgb, t.a * v_col.a);
+	else if (v_mode < 2.5) o = vec4(t.rgb, t.a * v_col.a);
+	else {
+		// mode 3: antialiased disc (uv = offset from the center, 1 = radius) for rounded corners
+		float d = length(v_uv);
+		float aa = max(fwidth(d), 1e-4);
+		o = vec4(v_col.rgb, v_col.a * (1.0 - smoothstep(1.0 - aa, 1.0, d)));
+	}
 }`
 
 POST_VS :: `#version 330 core
@@ -851,4 +857,33 @@ glsl :: proc(src: string) -> string {
 	if !ren.gles do return src
 	s, _ := strings.replace(src, "#version 330 core", "#version 300 es\nprecision highp float;\nprecision highp int;", 1, context.temp_allocator)
 	return s
+}
+
+// Rounded rectangle from plain quads + four antialiased quarter discs (mode 3).
+// top_only: square bottom corners (tabs that join the content below).
+rounded_rect :: proc(list: ^[dynamic]Vertex, x0, y0, x1, y1, radius: f32, col: [4]u8, top_only := false) {
+	r := min(radius, (x1 - x0) / 2, (y1 - y0) / 2)
+	if r <= 0.5 {quad(list, x0, y0, x1, y1, col); return}
+	rb := f32(0) if top_only else r
+	quad(list, x0 + r, y0, x1 - r, y1, col) // center column
+	quad(list, x0, y0 + r, x0 + r, y1 - rb, col) // left strip
+	quad(list, x1 - r, y0 + r, x1, y1 - rb, col) // right strip
+	quad(list, x0, y0, x0 + r, y0 + r, col, 3, -1, -1, 0, 0)
+	quad(list, x1 - r, y0, x1, y0 + r, col, 3, 0, -1, 1, 0)
+	if !top_only {
+		quad(list, x0, y1 - r, x0 + r, y1, col, 3, -1, 0, 0, 1)
+		quad(list, x1 - r, y1 - r, x1, y1, col, 3, 0, 0, 1, 1)
+	}
+}
+
+// Text without a background box (for translucent UI). Returns width in pixels.
+draw_label :: proc(list: ^[dynamic]Vertex, x, y: f32, s: string, fg: [4]u8) -> f32 {
+	cx := x
+	for ch in s {
+		w := rune_width(ch)
+		if w == 0 do continue
+		glyph_quad(list, ch, 0, cx, y, fg)
+		cx += f32(fonts.cell_w * w)
+	}
+	return cx - x
 }

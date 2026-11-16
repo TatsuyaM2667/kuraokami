@@ -369,7 +369,7 @@ layout :: proc() {
 	if len(app.tabs) == 0 do return
 	w, h: c.int
 	_ = sdl.GetWindowSizeInPixels(app.window, &w, &h)
-	app.tabbar_h = fonts.cell_h + 8 if tabbar_visible() else 0
+	app.tabbar_h = fonts.cell_h + 14 if tabbar_visible() else 0
 	for tab in app.tabs do layout_node(tab.root, {0, app.tabbar_h, int(w), int(h) - app.tabbar_h})
 	app.redraw = true
 	update_ime_rect()

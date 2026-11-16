@@ -58,35 +58,60 @@ move_tab :: proc(from, to: int) {
 	app.redraw = true
 }
 
+// Glass tab bar: everything is a translucent tint over the (already translucent) window
+// background, so the wallpaper shows through like in the terminal area.
 draw_tabbar :: proc(w: int) {
 	n := len(app.tabs)
-	h := f32(app.tabbar_h)
-	cw := fonts.cell_w
-	tw, plus_x := tab_metrics(w)
-	quad(&ren.ov, 0, 0, f32(w), h, rgba(mix(cfg.bg, cfg.fg, 0.03)))
+	H := f32(app.tabbar_h)
+	cw, ch := f32(fonts.cell_w), f32(fonts.cell_h)
+	tw_i, plus_x := tab_metrics(w)
+	tw := f32(tw_i)
+	fgc := cfg.fg
+	accent := cfg.cursor
+	alpha :: proc(c: u32, a: f32) -> [4]u8 {return rgba(c, u8(clamp(a, 0, 1) * 255))}
+	// A faint darkening behind the bar and a hairline where it meets the content.
+	quad(&ren.ov, 0, 0, f32(w), H, alpha(0x000000, 0.18))
+	quad(&ren.ov, 0, H - 1, f32(w), H, alpha(fgc, 0.06))
+	top := f32(4)
+	ty := top + (H - top - ch) / 2 // text baseline row, vertically centered in the tab
+	radius := ch * 0.45
 	for tb, i in app.tabs {
-		x := f32(i * tw)
+		x0 := f32(i) * tw + 3
+		x1 := f32(i + 1) * tw - 1
 		active := i == app.cur
 		hover := i == app.tab_hover.index && !app.tab_hover.plus
-		bg := mix(cfg.bg, cfg.fg, 0.16 if active else 0.10 if hover else 0.05)
-		quad(&ren.ov, x, 0, x + f32(tw) - 1, h, rgba(bg))
-		fg := cfg.fg if active else mix(cfg.fg, cfg.bg, 0.4)
-		show_close := tw >= 8 * cw
-		room := tw / cw - (4 if show_close else 1)
-		draw_text(&ren.ov, x + f32(cw) / 2, 4, truncate_cells(fmt.tprintf("%d %s", i + 1, tab_title(tb)), max(1, room)), fg, bg)
-		if show_close {
-			cbg := bg
-			if hover && app.tab_hover.close do cbg = mix(bg, cfg.palette[1], 0.5)
-			draw_text(&ren.ov, x + f32(tw - 3 * cw), 4, " × ", fg if active || hover else mix(fg, bg, 0.3), cbg)
+		if active do rounded_rect(&ren.ov, x0, top, x1, H, radius, alpha(fgc, 0.15), true)
+		else if hover do rounded_rect(&ren.ov, x0, top, x1, H, radius, alpha(fgc, 0.08), true)
+		else if i + 1 != app.cur && i + 1 < n {
+			// thin divider between two inactive tabs
+			quad(&ren.ov, x1, top + (H - top) * 0.28, x1 + 1, H - (H - top) * 0.28, alpha(fgc, 0.12))
+		}
+		show_close := tw_i >= 8 * fonts.cell_w
+		room := int(tw / cw) - (4 if show_close else 1)
+		label := truncate_cells(tab_title(tb), max(1, room))
+		fg := alpha(fgc, 1.0 if active else 0.85 if hover else 0.5)
+		draw_label(&ren.ov, x0 + cw * 0.8, ty, label, fg)
+		if show_close && (active || hover) {
+			cx := x1 - cw * 1.6
+			cy := top + (H - top) / 2
+			cr := ch * 0.42
+			if hover && app.tab_hover.close do rounded_rect(&ren.ov, cx - cr, cy - cr, cx + cr, cy + cr, cr, alpha(cfg.palette[1], 0.45))
+			draw_label(&ren.ov, cx - cw / 2, cy - ch / 2, "×", alpha(fgc, 0.9 if hover && app.tab_hover.close else 0.6))
 		}
 	}
-	pbg := mix(cfg.bg, cfg.fg, 0.14 if app.tab_hover.plus else 0.03)
-	draw_text(&ren.ov, f32(plus_x), 4, " + ", cfg.fg, pbg)
-	// Sliding underline marks the active tab.
+	// + button: a round hover highlight.
+	px := f32(plus_x) + cw * 1.5
+	py := top + (H - top) / 2
+	pr := ch * 0.45
+	if app.tab_hover.plus do rounded_rect(&ren.ov, px - pr, py - pr, px + pr, py + pr, pr, alpha(fgc, 0.12))
+	draw_label(&ren.ov, px - cw / 2, py - ch / 2, "+", alpha(fgc, 0.9 if app.tab_hover.plus else 0.55))
+	// Sliding accent underline with a soft glow under the active tab.
 	p := ease_out((app.now - app.tab_anim_start) / 0.25) if app.tab_prev >= 0 && cfg.animation else 1
 	from := f32(app.tab_prev if app.tab_prev >= 0 && app.tab_prev < n else app.cur)
-	ux := (from + (f32(app.cur) - from) * p) * f32(tw)
-	quad(&ren.ov, ux, h - 2, ux + f32(tw) - 1, h, rgba(cfg.cursor))
+	ux := (from + (f32(app.cur) - from) * p) * tw
+	inset := tw * 0.18
+	rounded_rect(&ren.ov, ux + inset - 2, H - 6, ux + tw - inset + 2, H, 3, alpha(accent, 0.18))
+	rounded_rect(&ren.ov, ux + inset, H - 3, ux + tw - inset, H - 1, 1, alpha(accent, 0.95))
 }
 
 // Mouse button on the tab bar. Returns true if handled.
