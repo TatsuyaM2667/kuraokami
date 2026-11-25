@@ -1,33 +1,33 @@
 package kuraokami
 
+import "core:c"
 import "core:fmt"
+import "core:math"
 import "core:os"
 import "core:strings"
 import "core:sync"
 import "core:thread"
-import "core:math"
 import "core:unicode"
 import "core:unicode/utf8"
-import "core:c"
-import sdl "vendor:sdl3"
 import gl "vendor:OpenGL"
+import sdl "vendor:sdl3"
 
 VERSION :: "0.2.0"
 
 Node :: struct {
-	term:      ^Term, // leaf when non-nil
-	a, b:      ^Node,
-	vertical:  bool, // a | b side by side
-	ratio:     f32,
-	parent:    ^Node,
-	rect:      Rect,
+	term:           ^Term, // leaf when non-nil
+	a, b:           ^Node,
+	vertical:       bool, // a | b side by side
+	ratio:          f32,
+	parent:         ^Node,
+	rect:           Rect,
 	// animation state (leaves)
-	scroll_vis: f32,
+	scroll_vis:     f32,
 	cur_vis, trail: [2]f32,
-	cur_target: [2]f32,
-	cur_prev:   [2]f32, // previous target (for shaders)
-	cur_change: f64,
-	anim_init:  bool,
+	cur_target:     [2]f32,
+	cur_prev:       [2]f32, // previous target (for shaders)
+	cur_change:     f64,
+	anim_init:      bool,
 }
 
 Tab :: struct {
@@ -35,54 +35,55 @@ Tab :: struct {
 }
 
 App :: struct {
-	window:        ^sdl.Window,
-	tabs:          [dynamic]^Tab,
-	cur:           int,
-	sel:           Selection,
-	selecting:     bool,
-	sel_mode:      int, // 1 char, 2 word, 3 line
-	preedit:       string,
-	density:       f32,
-	font_pt:       f32,
-	wake_type:     u32,
-	redraw:        bool,
-	suppress_until: u64, // event timestamp (ns): drop the TEXT_INPUT produced by a key we already handled
-	preedit_end:   u64,  // when the IME composition last ended (ns)
-	tabbar_h:      int,
-	running:       bool,
-	exec_argv:     []string,
-	fetch_done:    bool,
-	last_mouse_cell: [2]int,
-	mouse_px:      [2]f32,
-	drag:          ^Node, // split divider being dragged
+	window:                                             ^sdl.Window,
+	tabs:                                               [dynamic]^Tab,
+	cur:                                                int,
+	sel:                                                Selection,
+	selecting:                                          bool,
+	sel_mode:                                           int, // 1 char, 2 word, 3 line
+	preedit:                                            string,
+	density:                                            f32,
+	font_pt:                                            f32,
+	wake_type:                                          u32,
+	redraw:                                             bool,
+	suppress_until:                                     u64, // event timestamp (ns): drop the TEXT_INPUT produced by a key we already handled
+	preedit_end:                                        u64, // when the IME composition last ended (ns)
+	tabbar_h:                                           int,
+	running:                                            bool,
+	exec_argv:                                          []string,
+	fetch_done:                                         bool,
+	last_mouse_cell:                                    [2]int,
+	mouse_px:                                           [2]f32,
+	drag:                                               ^Node, // split divider being dragged
 	cursor_default, cursor_ew, cursor_ns, cursor_arrow: ^sdl.Cursor,
 	// search
-	search_on:     bool,
-	search_text:   [dynamic]rune,
-	search_cur:    [2]i64,
-	search_count:  int,
+	search_on:                                          bool,
+	search_text:                                        [dynamic]rune,
+	search_cur:                                         [2]i64,
+	search_count:                                       int,
 	// animation clocks (seconds)
-	t0, now, last_frame: f64,
-	start_time:    f64,
-	bell_time:     f64,
-	tab_anim_start: f64,
-	tab_prev:      int,
-	tab_dir:       f32,
-	last_input:    f64,
-	toast:         string,
-	toast_time:    f64,
-	pending_paste: string, // multi-line paste waiting for confirmation
-	pending_paste_time: f64,
-	hover_url:     string, // link target shown while Ctrl is held over it
-	last_notify:   f64,
-	quick:         bool, // running as the quick terminal (--quick)
-	quick_hidden:  bool,
-	tab_hover:     Tab_Hit,
-	tab_drag:      int, // tab being dragged to reorder (-1: none)
-	palette_on:    bool,
-	palette_text:  [dynamic]rune,
-	palette_sel:   int,
-	palette_time:  f64,
+	t0, now, last_frame:                                f64,
+	start_time:                                         f64,
+	bell_time:                                          f64,
+	tab_anim_start:                                     f64,
+	tab_prev:                                           int,
+	tab_dir:                                            f32,
+	last_input:                                         f64,
+	toast:                                              string,
+	toast_time:                                         f64,
+	pending_paste:                                      string, // multi-line paste waiting for confirmation
+	pending_paste_time:                                 f64,
+	hover_url:                                          string, // link target shown while Ctrl is held over it
+	last_notify:                                        f64,
+	cli_cwd:                                            string, // --working-directory (overrides the config)
+	quick:                                              bool, // running as the quick terminal (--quick)
+	quick_hidden:                                       bool,
+	tab_hover:                                          Tab_Hit,
+	tab_drag:                                           int, // tab being dragged to reorder (-1: none)
+	palette_on:                                         bool,
+	palette_text:                                       [dynamic]rune,
+	palette_sel:                                        int,
+	palette_time:                                       f64,
 }
 
 app: App
@@ -201,7 +202,17 @@ shell_argv :: proc() -> ([]string, [][2]string) {
 				// Wait (max ~0.6s) until the tiling WM has settled the size, so the fetch isn't printed at the
 				// pre-tile size and then rewrapped.
 				WAIT :: `p=; n=0; i=0; while [ $i -lt 12 ]; do c=$(stty size 2>/dev/null); if [ "$c" = "$p" ]; then n=$((n+1)); [ $n -ge 2 ] && break; else n=0; fi; p=$c; i=$((i+1)); sleep 0.05; done; `
-				append(&out, "/bin/sh", "-c", fmt.tprintf("%s%s%s; exec \"$0\" \"$@\"", WAIT, cfg.fetch_command, fetch_logo_args()))
+				append(
+					&out,
+					"/bin/sh",
+					"-c",
+					fmt.tprintf(
+						"%s%s%s; exec \"$0\" \"$@\"",
+						WAIT,
+						cfg.fetch_command,
+						fetch_logo_args(),
+					),
+				)
 				append(&out, ..argv)
 				return out[:], env
 			}
@@ -385,7 +396,8 @@ update_ime_rect :: proc() {
 	r := sdl.Rect {
 		c.int(f32(leaf.rect.x + cfg.padding + t.cx * fonts.cell_w) / d),
 		c.int(f32(leaf.rect.y + cfg.padding + t.cy * fonts.cell_h) / d),
-		c.int(f32(fonts.cell_w) / d), c.int(f32(fonts.cell_h) / d),
+		c.int(f32(fonts.cell_w) / d),
+		c.int(f32(fonts.cell_h) / d),
 	}
 	_ = sdl.SetTextInputArea(app.window, &r, 0)
 }
@@ -400,12 +412,12 @@ apply_config :: proc() {
 	errs := config_load()
 	set_font_size(cfg.font_size)
 	for tab in app.tabs do for_leaves(tab.root, proc(n: ^Node, _: rawptr) {
-		t := n.term
-		sync.mutex_lock(&t.mu)
-		palette_reset(t)
-		t.dirty = true
-		sync.mutex_unlock(&t.mu)
-	}, nil)
+			t := n.term
+			sync.mutex_lock(&t.mu)
+			palette_reset(t)
+			t.dirty = true
+			sync.mutex_unlock(&t.mu)
+		}, nil)
 	if e := post_shader_load(cfg.custom_shader); e != "" do show_toast(e)
 	else if len(errs) > 0 do show_toast(fmt.tprintf("config: %s", strings.join(errs, " / ", context.temp_allocator)))
 	else do show_toast("config reloaded")
@@ -431,10 +443,14 @@ blink_alpha :: proc() -> (alpha: f32, next_ms: i32) {
 	if idle > 30 do return 1, -1 // stop blinking when idle: no wakeups at all
 	p := math.mod(idle, 1.0)
 	switch {
-	case p < 0.5: return 1, i32((0.5 - p) * 1000) + 1
-	case p < 0.6: return f32(1 - (p - 0.5) / 0.1), 0
-	case p < 0.9: return 0, i32((0.9 - p) * 1000) + 1
-	case: return f32((p - 0.9) / 0.1), 0
+	case p < 0.5:
+		return 1, i32((0.5 - p) * 1000) + 1
+	case p < 0.6:
+		return f32(1 - (p - 0.5) / 0.1), 0
+	case p < 0.9:
+		return 0, i32((0.9 - p) * 1000) + 1
+	case:
+		return f32((p - 0.9) / 0.1), 0
 	}
 }
 
@@ -442,34 +458,53 @@ blink_alpha :: proc() -> (alpha: f32, next_ms: i32) {
 anim_tick :: proc(dt: f64) -> bool {
 	active := false
 	if len(app.tabs) == 0 do return false
-	Ctx :: struct {dt: f64, active: bool}
+	Ctx :: struct {
+		dt:     f64,
+		active: bool,
+	}
 	ctx := Ctx{dt, false}
-	for_leaves(current_tab().root, proc(n: ^Node, data: rawptr) {
-		ctx := (^Ctx)(data)
-		t := n.term
-		sync.mutex_lock(&t.mu)
-		target := [2]f32{f32(t.cx * fonts.cell_w), f32(t.cy * fonts.cell_h)}
-		voff := f32(t.view_off)
-		sync.mutex_unlock(&t.mu)
-		if !n.anim_init {
-			n.cur_vis, n.trail, n.cur_target, n.cur_prev = target, target, target, target
-			n.scroll_vis = voff
-			n.anim_init = true
-		}
-		if target != n.cur_target {
-			n.cur_prev = n.cur_target
-			n.cur_target = target
-			n.cur_change = app.now
-			app.last_input = app.now // keep the cursor solid while it moves
-		}
-		for i in 0 ..< 2 {
-			n.cur_vis[i] = approach(n.cur_vis[i], target[i], ctx.dt, 0.025 if cfg.cursor_trail else 0.0001, 0.5)
-			n.trail[i] = approach(n.trail[i], n.cur_vis[i], ctx.dt, 0.06, 0.5)
-		}
-		if !cfg.cursor_trail do n.trail = n.cur_vis
-		n.scroll_vis = approach(n.scroll_vis, voff, ctx.dt, 0.045 if cfg.smooth_scroll else 0.0001, 0.01)
-		if n.cur_vis != target || n.trail != n.cur_vis || n.scroll_vis != voff do ctx.active = true
-	}, &ctx)
+	for_leaves(
+		current_tab().root,
+		proc(n: ^Node, data: rawptr) {
+			ctx := (^Ctx)(data)
+			t := n.term
+			sync.mutex_lock(&t.mu)
+			target := [2]f32{f32(t.cx * fonts.cell_w), f32(t.cy * fonts.cell_h)}
+			voff := f32(t.view_off)
+			sync.mutex_unlock(&t.mu)
+			if !n.anim_init {
+				n.cur_vis, n.trail, n.cur_target, n.cur_prev = target, target, target, target
+				n.scroll_vis = voff
+				n.anim_init = true
+			}
+			if target != n.cur_target {
+				n.cur_prev = n.cur_target
+				n.cur_target = target
+				n.cur_change = app.now
+				app.last_input = app.now // keep the cursor solid while it moves
+			}
+			for i in 0 ..< 2 {
+				n.cur_vis[i] = approach(
+					n.cur_vis[i],
+					target[i],
+					ctx.dt,
+					0.025 if cfg.cursor_trail else 0.0001,
+					0.5,
+				)
+				n.trail[i] = approach(n.trail[i], n.cur_vis[i], ctx.dt, 0.06, 0.5)
+			}
+			if !cfg.cursor_trail do n.trail = n.cur_vis
+			n.scroll_vis = approach(
+				n.scroll_vis,
+				voff,
+				ctx.dt,
+				0.045 if cfg.smooth_scroll else 0.0001,
+				0.01,
+			)
+			if n.cur_vis != target || n.trail != n.cur_vis || n.scroll_vis != voff do ctx.active = true
+		},
+		&ctx,
+	)
 	active = ctx.active
 	if cfg.animation {
 		if app.now - app.start_time < 0.35 do active = true
@@ -492,7 +527,8 @@ leaf_opts :: proc(n: ^Node, focus: bool, blink: f32) -> Draw_Opts {
 		cursor         = n.cur_vis,
 		trail          = n.trail,
 		cursor_alpha   = blink if focus else 1,
-		cursor_arrived = abs(n.cur_vis[0] - n.cur_target[0]) < 1 && abs(n.cur_vis[1] - n.cur_target[1]) < 1,
+		cursor_arrived = abs(n.cur_vis[0] - n.cur_target[0]) <
+			1 && abs(n.cur_vis[1] - n.cur_target[1]) < 1,
 	}
 	if focus && app.search_on {
 		o.search = app.search_text[:]
@@ -502,28 +538,39 @@ leaf_opts :: proc(n: ^Node, focus: bool, blink: f32) -> Draw_Opts {
 }
 
 draw_tab :: proc(tab: ^Tab, active: bool, blink: f32) {
-	Ctx :: struct {tab: ^Tab, active: bool, blink: f32}
+	Ctx :: struct {
+		tab:    ^Tab,
+		active: bool,
+		blink:  f32,
+	}
 	ctx := Ctx{tab, active, blink}
 	for_leaves(tab.root, proc(n: ^Node, data: rawptr) {
-		ctx := (^Ctx)(data)
-		t := n.term
-		pad := cfg.padding
-		r := Rect{n.rect.x + pad, n.rect.y + pad, n.rect.w - 2 * pad, n.rect.h - 2 * pad}
-		is_focus := ctx.active && n == ctx.tab.focus && sdl.GetKeyboardFocus() == app.window
-		sync.mutex_lock(&t.mu)
-		if t.bg_color != cfg.bg {
-			scissor(n.rect.x, n.rect.y, n.rect.w, n.rect.h)
-			quad(&ren.bg, f32(n.rect.x), f32(n.rect.y), f32(n.rect.x + n.rect.w), f32(n.rect.y + n.rect.h), rgba(t.bg_color, u8(cfg.opacity * 255)))
-			flush(&ren.bg, fonts.atlas)
-		}
-		if !n.anim_init {
-			n.cur_vis = {f32(t.cx * fonts.cell_w), f32(t.cy * fonts.cell_h)}
-			n.trail, n.cur_target = n.cur_vis, n.cur_vis
-			n.scroll_vis = f32(t.view_off)
-		}
-		sync.mutex_unlock(&t.mu)
-		draw_term(t, r, leaf_opts(n, n == ctx.tab.focus && ctx.active, ctx.blink))
-	}, &ctx)
+			ctx := (^Ctx)(data)
+			t := n.term
+			pad := cfg.padding
+			r := Rect{n.rect.x + pad, n.rect.y + pad, n.rect.w - 2 * pad, n.rect.h - 2 * pad}
+			is_focus := ctx.active && n == ctx.tab.focus && sdl.GetKeyboardFocus() == app.window
+			sync.mutex_lock(&t.mu)
+			if t.bg_color != cfg.bg {
+				scissor(n.rect.x, n.rect.y, n.rect.w, n.rect.h)
+				quad(
+					&ren.bg,
+					f32(n.rect.x),
+					f32(n.rect.y),
+					f32(n.rect.x + n.rect.w),
+					f32(n.rect.y + n.rect.h),
+					rgba(t.bg_color, u8(cfg.opacity * 255)),
+				)
+				flush(&ren.bg, fonts.atlas)
+			}
+			if !n.anim_init {
+				n.cur_vis = {f32(t.cx * fonts.cell_w), f32(t.cy * fonts.cell_h)}
+				n.trail, n.cur_target = n.cur_vis, n.cur_vis
+				n.scroll_vis = f32(t.view_off)
+			}
+			sync.mutex_unlock(&t.mu)
+			draw_term(t, r, leaf_opts(n, n == ctx.tab.focus && ctx.active, ctx.blink))
+		}, &ctx)
 	scissor(0, 0, ren.width, ren.height)
 	draw_dividers(tab.root)
 	flush(&ren.ov, fonts.atlas)
@@ -548,7 +595,10 @@ tab_title :: proc(tab: ^Tab) -> string {
 	title := t.title if t.title != "" else "kuraokami"
 	// A directory title (shell integration sets the cwd) shows just the folder name, like a browser
 	// shows the page name; commands and other titles stay as they are.
-	if (strings.has_prefix(title, "/") || strings.has_prefix(title, "~/") || strings.has_prefix(title, "…/")) && !strings.contains_rune(title, ' ') {
+	if (strings.has_prefix(title, "/") ||
+		   strings.has_prefix(title, "~/") ||
+		   strings.has_prefix(title, "…/")) &&
+	   !strings.contains_rune(title, ' ') {
 		trimmed := strings.trim_right(title, "/")
 		if i := strings.last_index_byte(trimmed, '/'); i >= 0 && i + 1 < len(trimmed) do return trimmed[i + 1:]
 	}
@@ -571,14 +621,22 @@ draw_overlay_ui :: proc(w, h: int) {
 	if app.tabbar_h > 0 do draw_tabbar(w)
 	if app.search_on {
 		leaf := current_tab().focus
-		label := fmt.tprintf(" 🔍 %s%s▏ %d ", utf8.runes_to_string(app.search_text[:], context.temp_allocator), app.preedit, app.search_count)
+		label := fmt.tprintf(
+			" 🔍 %s%s▏ %d ",
+			utf8.runes_to_string(app.search_text[:], context.temp_allocator),
+			app.preedit,
+			app.search_count,
+		)
 		wpx := f32(fonts.cell_w * (strings.rune_count(label) + 2))
 		x := f32(leaf.rect.x + leaf.rect.w) - wpx - 8
 		draw_text(&ren.ov, x, f32(leaf.rect.y + 4), label, cfg.bg, mix(cfg.fg, cfg.cursor, 0.3))
 	}
 	if app.palette_on do palette_draw(w, h)
 	if app.hover_url != "" {
-		label := truncate_cells(fmt.tprintf(" 🔗 %s ", app.hover_url), max(1, w / fonts.cell_w - 2))
+		label := truncate_cells(
+			fmt.tprintf(" 🔗 %s ", app.hover_url),
+			max(1, w / fonts.cell_w - 2),
+		)
 		draw_text(&ren.ov, 6, f32(h - fonts.cell_h - 6), label, cfg.fg, mix(cfg.bg, cfg.fg, 0.2))
 	}
 	if app.toast != "" {
@@ -588,7 +646,16 @@ draw_overlay_ui :: proc(w, h: int) {
 			msg := truncate_cells(fmt.tprintf("  %s  ", app.toast), max(1, w / fonts.cell_w - 2))
 			mw := f32(fonts.cell_w * strings.rune_count(msg))
 			slide := f32(0) if !cfg.animation else (1 - ease_out(age / 0.2)) * f32(fonts.cell_h)
-			draw_text(&ren.ov, (f32(w) - mw) / 2, f32(h - fonts.cell_h * 2) + slide, msg, cfg.bg, cfg.fg, false, a)
+			draw_text(
+				&ren.ov,
+				(f32(w) - mw) / 2,
+				f32(h - fonts.cell_h * 2) + slide,
+				msg,
+				cfg.bg,
+				cfg.fg,
+				false,
+				a,
+			)
 		}
 	}
 	if cfg.animation && cfg.visual_bell && app.now - app.bell_time < 0.3 {
@@ -624,14 +691,24 @@ render :: proc() {
 		leaf := current_tab().focus
 		pad := f32(cfg.padding)
 		cr :: proc(leaf: ^Node, p: [2]f32, pad: f32, h: c.int) -> [4]f32 {
-			return {f32(leaf.rect.x) + pad + p[0], f32(h) - (f32(leaf.rect.y) + pad + p[1]), f32(fonts.cell_w), f32(fonts.cell_h)}
+			return {
+				f32(leaf.rect.x) + pad + p[0],
+				f32(h) - (f32(leaf.rect.y) + pad + p[1]),
+				f32(fonts.cell_w),
+				f32(fonts.cell_h),
+			}
 		}
-		frame_post(Post_Uniforms {
-			time = f32(app.now - app.t0), dt = f32(app.now - app.last_frame),
-			cursor = cr(leaf, leaf.cur_vis, pad, h), prev = cr(leaf, leaf.cur_prev, pad, h),
-			cursor_color = leaf.term.cursor_color, cursor_change = f32(leaf.cur_change - app.t0),
-			mouse = app.mouse_px,
-		})
+		frame_post(
+			Post_Uniforms {
+				time = f32(app.now - app.t0),
+				dt = f32(app.now - app.last_frame),
+				cursor = cr(leaf, leaf.cur_vis, pad, h),
+				prev = cr(leaf, leaf.cur_prev, pad, h),
+				cursor_color = leaf.term.cursor_color,
+				cursor_change = f32(leaf.cur_change - app.t0),
+				mouse = app.mouse_px,
+			},
+		)
 	}
 	if shot := os.get_env("KURAOKAMI_SHOT", context.temp_allocator); shot != "" {
 		// Debug aid: dump each frame as a PNG (used for headless visual checks).
@@ -674,7 +751,9 @@ paste :: proc(text: string) {
 			delete(app.pending_paste)
 			app.pending_paste = strings.clone(text)
 			app.pending_paste_time = app.now
-			show_toast("改行を含む貼り付けです。実行するにはもう一度貼り付けてください")
+			show_toast(
+				"改行を含む貼り付けです。実行するにはもう一度貼り付けてください",
+			)
 			return
 		}
 		delete(app.pending_paste)
@@ -712,28 +791,41 @@ special_key :: proc(t: ^Term, key: sdl.Keycode, mod: sdl.Keymod) -> string {
 		return fmt.tprintf("\x1b[%d~", n)
 	}
 	switch key {
-	case sdl.K_UP: return csi_letter(t, 'A', mp)
-	case sdl.K_DOWN: return csi_letter(t, 'B', mp)
-	case sdl.K_RIGHT: return csi_letter(t, 'C', mp)
-	case sdl.K_LEFT: return csi_letter(t, 'D', mp)
-	case sdl.K_HOME: return csi_letter(t, 'H', mp)
-	case sdl.K_END: return csi_letter(t, 'F', mp)
-	case sdl.K_INSERT: return tilde(2, mp)
-	case sdl.K_DELETE: return tilde(3, mp)
-	case sdl.K_PAGEUP: return tilde(5, mp)
-	case sdl.K_PAGEDOWN: return tilde(6, mp)
+	case sdl.K_UP:
+		return csi_letter(t, 'A', mp)
+	case sdl.K_DOWN:
+		return csi_letter(t, 'B', mp)
+	case sdl.K_RIGHT:
+		return csi_letter(t, 'C', mp)
+	case sdl.K_LEFT:
+		return csi_letter(t, 'D', mp)
+	case sdl.K_HOME:
+		return csi_letter(t, 'H', mp)
+	case sdl.K_END:
+		return csi_letter(t, 'F', mp)
+	case sdl.K_INSERT:
+		return tilde(2, mp)
+	case sdl.K_DELETE:
+		return tilde(3, mp)
+	case sdl.K_PAGEUP:
+		return tilde(5, mp)
+	case sdl.K_PAGEDOWN:
+		return tilde(6, mp)
 	case sdl.K_F1 ..= sdl.K_F4:
 		l := u8('P' + int(key - sdl.K_F1))
 		return fmt.tprintf("\x1b[1;%d%c", mp, l) if mp > 1 else fmt.tprintf("\x1bO%c", l)
 	case sdl.K_F5 ..= sdl.K_F12:
 		codes := [8]int{15, 17, 18, 19, 20, 21, 23, 24}
 		return tilde(codes[key - sdl.K_F5], mp)
-	case sdl.K_RETURN, sdl.K_KP_ENTER: return "\x1b\r" if mod & sdl.KMOD_ALT != {} else "\r"
+	case sdl.K_RETURN, sdl.K_KP_ENTER:
+		return "\x1b\r" if mod & sdl.KMOD_ALT != {} else "\r"
 	case sdl.K_BACKSPACE:
 		if mod & sdl.KMOD_CTRL != {} do return "\x08"
 		return "\x1b\x7f" if mod & sdl.KMOD_ALT != {} else "\x7f"
-	case sdl.K_TAB: return "\x1b[Z" if mod & sdl.KMOD_SHIFT != {} else "\t"
-	case sdl.K_ESCAPE: return "\x1b"
+	case sdl.K_TAB:
+		return "\x1b[Z" if mod & sdl.KMOD_SHIFT != {} else "\t"
+	case sdl.K_ESCAPE:
+		return "\x1b"
 	}
 	return ""
 }
@@ -800,34 +892,64 @@ run_action :: proc(b: Keybind) {
 		if p := sdl.GetPrimarySelectionText(); p != nil {paste(string(cstring(p))); sdl.free(p)}
 	case .Select_All:
 		sync.mutex_lock(&t.mu)
-		app.sel = {active = true, a = {first_abs(t), 0}, b = {view_abs_at(t, 0, t.rows - 1), i64(t.cols - 1)}, term = t}
+		app.sel = {
+			active = true,
+			a      = {first_abs(t), 0},
+			b      = {view_abs_at(t, 0, t.rows - 1), i64(t.cols - 1)},
+			term   = t,
+		}
 		sync.mutex_unlock(&t.mu)
 		app.redraw = true
-	case .New_Tab: new_tab()
-	case .Close_Pane: close_pane(current_tab().focus)
-	case .Split_Right: split(true)
-	case .Split_Down: split(false)
-	case .Focus_Left: focus_dir({-1, 0})
-	case .Focus_Right: focus_dir({1, 0})
-	case .Focus_Up: focus_dir({0, -1})
-	case .Focus_Down: focus_dir({0, 1})
-	case .Next_Tab: switch_tab((app.cur + 1) % len(app.tabs))
-	case .Prev_Tab: switch_tab((app.cur + len(app.tabs) - 1) % len(app.tabs))
-	case .Goto_Tab: switch_tab(b.arg - 1)
-	case .Resize_Left: resize_split(true, -0.05)
-	case .Resize_Right: resize_split(true, 0.05)
-	case .Resize_Up: resize_split(false, -0.05)
-	case .Resize_Down: resize_split(false, 0.05)
-	case .Equalize_Splits: equalize(current_tab().root); layout()
-	case .Scroll_Page_Up: scroll_lines(t, t.rows - 1)
-	case .Scroll_Page_Down: scroll_lines(t, -(t.rows - 1))
-	case .Scroll_Top: scroll_lines(t, 1 << 30)
-	case .Scroll_Bottom: scroll_lines(t, -(1 << 30))
-	case .Prompt_Prev: jump_prompt(t, -1)
-	case .Prompt_Next: jump_prompt(t, 1)
-	case .Font_Inc: set_font_size(app.font_pt + 1)
-	case .Font_Dec: set_font_size(app.font_pt - 1)
-	case .Font_Reset: set_font_size(cfg.font_size)
+	case .New_Tab:
+		new_tab()
+	case .Close_Pane:
+		close_pane(current_tab().focus)
+	case .Split_Right:
+		split(true)
+	case .Split_Down:
+		split(false)
+	case .Focus_Left:
+		focus_dir({-1, 0})
+	case .Focus_Right:
+		focus_dir({1, 0})
+	case .Focus_Up:
+		focus_dir({0, -1})
+	case .Focus_Down:
+		focus_dir({0, 1})
+	case .Next_Tab:
+		switch_tab((app.cur + 1) % len(app.tabs))
+	case .Prev_Tab:
+		switch_tab((app.cur + len(app.tabs) - 1) % len(app.tabs))
+	case .Goto_Tab:
+		switch_tab(b.arg - 1)
+	case .Resize_Left:
+		resize_split(true, -0.05)
+	case .Resize_Right:
+		resize_split(true, 0.05)
+	case .Resize_Up:
+		resize_split(false, -0.05)
+	case .Resize_Down:
+		resize_split(false, 0.05)
+	case .Equalize_Splits:
+		equalize(current_tab().root); layout()
+	case .Scroll_Page_Up:
+		scroll_lines(t, t.rows - 1)
+	case .Scroll_Page_Down:
+		scroll_lines(t, -(t.rows - 1))
+	case .Scroll_Top:
+		scroll_lines(t, 1 << 30)
+	case .Scroll_Bottom:
+		scroll_lines(t, -(1 << 30))
+	case .Prompt_Prev:
+		jump_prompt(t, -1)
+	case .Prompt_Next:
+		jump_prompt(t, 1)
+	case .Font_Inc:
+		set_font_size(app.font_pt + 1)
+	case .Font_Dec:
+		set_font_size(app.font_pt - 1)
+	case .Font_Reset:
+		set_font_size(cfg.font_size)
 	case .Open_Config:
 		os.make_directory_all(config_dir())
 		if !os.exists(config_path()) do _ = os.write_entire_file(config_path(), transmute([]u8)string(SAMPLE_CONFIG))
@@ -842,8 +964,10 @@ run_action :: proc(b: Keybind) {
 			switch_tab(len(app.tabs) - 1)
 			layout()
 		}
-	case .Reload_Config: apply_config()
-	case .Command_Palette: palette_open()
+	case .Reload_Config:
+		apply_config()
+	case .Command_Palette:
+		palette_open()
 	case .Search:
 		app.search_on = true
 		clear(&app.search_text)
@@ -852,7 +976,8 @@ run_action :: proc(b: Keybind) {
 		sync.mutex_unlock(&t.mu)
 		app.search_count = 0
 		app.redraw = true
-	case .Clear_Scrollback: clear_scrollback(t)
+	case .Clear_Scrollback:
+		clear_scrollback(t)
 	case .Toggle_Fullscreen:
 		_ = sdl.SetWindowFullscreen(app.window, .FULLSCREEN not_in sdl.GetWindowFlags(app.window))
 	}
@@ -875,26 +1000,30 @@ SAMPLE_CONFIG :: `# kuraokami config (hot-reloaded on save)
 `
 
 Focus_Search :: struct {
-	from:  Rect,
-	dir:   [2]int,
-	best:  ^Node,
-	dist:  int,
+	from: Rect,
+	dir:  [2]int,
+	best: ^Node,
+	dist: int,
 }
 
 focus_dir :: proc(dir: [2]int) {
 	tab := current_tab()
-	fs := Focus_Search{from = tab.focus.rect, dir = dir, dist = max(int)}
+	fs := Focus_Search {
+		from = tab.focus.rect,
+		dir  = dir,
+		dist = max(int),
+	}
 	for_leaves(tab.root, proc(n: ^Node, data: rawptr) {
-		fs := (^Focus_Search)(data)
-		a, b := fs.from, n.rect
-		ac := [2]int{a.x + a.w / 2, a.y + a.h / 2}
-		bc := [2]int{b.x + b.w / 2, b.y + b.h / 2}
-		d := [2]int{bc.x - ac.x, bc.y - ac.y}
-		along := d.x * fs.dir.x + d.y * fs.dir.y
-		if along <= 0 do return
-		dist := along + 2 * abs(d.x * fs.dir.y + d.y * fs.dir.x)
-		if dist < fs.dist {fs.dist = dist; fs.best = n}
-	}, &fs)
+			fs := (^Focus_Search)(data)
+			a, b := fs.from, n.rect
+			ac := [2]int{a.x + a.w / 2, a.y + a.h / 2}
+			bc := [2]int{b.x + b.w / 2, b.y + b.h / 2}
+			d := [2]int{bc.x - ac.x, bc.y - ac.y}
+			along := d.x * fs.dir.x + d.y * fs.dir.y
+			if along <= 0 do return
+			dist := along + 2 * abs(d.x * fs.dir.y + d.y * fs.dir.x)
+			if dist < fs.dist {fs.dist = dist; fs.best = n}
+		}, &fs)
 	if fs.best != nil {tab.focus = fs.best; app.redraw = true; update_ime_rect()}
 }
 
@@ -911,7 +1040,11 @@ search_step :: proc(dir: int) {
 	if !t.use_alt {
 		top, bot := view_abs(t, 0), view_abs(t, t.rows - 1)
 		if pos[0] < top || pos[0] > bot {
-			t.view_off = clamp(int(t.total_pushed + i64(t.rows / 2) - pos[0]), 0, t.primary.count - t.rows)
+			t.view_off = clamp(
+				int(t.total_pushed + i64(t.rows / 2) - pos[0]),
+				0,
+				t.primary.count - t.rows,
+			)
 		}
 	}
 	app.redraw = true
@@ -1006,14 +1139,22 @@ on_key :: proc(e: sdl.KeyboardEvent) {
 		k := e.key
 		b: int = -1
 		switch k {
-		case sdl.K_A ..= sdl.K_Z: b = int(k - sdl.K_A) + 1
-		case sdl.K_SPACE, sdl.K_2: b = 0
-		case sdl.K_LEFTBRACKET, sdl.K_3: b = 27
-		case sdl.K_BACKSLASH, sdl.K_4: b = 28
-		case sdl.K_RIGHTBRACKET, sdl.K_5: b = 29
-		case sdl.K_6: b = 30
-		case sdl.K_SLASH, sdl.K_7, sdl.K_MINUS: b = 31
-		case sdl.K_8: b = 127
+		case sdl.K_A ..= sdl.K_Z:
+			b = int(k - sdl.K_A) + 1
+		case sdl.K_SPACE, sdl.K_2:
+			b = 0
+		case sdl.K_LEFTBRACKET, sdl.K_3:
+			b = 27
+		case sdl.K_BACKSLASH, sdl.K_4:
+			b = 28
+		case sdl.K_RIGHTBRACKET, sdl.K_5:
+			b = 29
+		case sdl.K_6:
+			b = 30
+		case sdl.K_SLASH, sdl.K_7, sdl.K_MINUS:
+			b = 31
+		case sdl.K_8:
+			b = 127
 		}
 		if b >= 0 {
 			bytes := [2]u8{0x1b, u8(b)}
@@ -1061,13 +1202,16 @@ on_text :: proc(text: string, ts: u64) {
 // ---------- mouse & selection ----------
 
 pane_at :: proc(px, py: int) -> ^Node {
-	Hit :: struct {x, y: int, n: ^Node}
+	Hit :: struct {
+		x, y: int,
+		n:    ^Node,
+	}
 	h := Hit{px, py, nil}
 	for_leaves(current_tab().root, proc(n: ^Node, data: rawptr) {
-		h := (^Hit)(data)
-		r := n.rect
-		if h.x >= r.x && h.x < r.x + r.w && h.y >= r.y && h.y < r.y + r.h do h.n = n
-	}, &h)
+			h := (^Hit)(data)
+			r := n.rect
+			if h.x >= r.x && h.x < r.x + r.w && h.y >= r.y && h.y < r.y + r.h do h.n = n
+		}, &h)
 	return h.n
 }
 
@@ -1102,7 +1246,10 @@ mouse_report :: proc(t: ^Term, button, x, y: int, press: bool, motion := false) 
 	if mod & sdl.KMOD_CTRL != {} do b += 16
 	if motion do b += 32
 	if t.mouse_sgr {
-		pty_write(t, transmute([]u8)fmt.tprintf("\x1b[<%d;%d;%d%c", b, x + 1, y + 1, 'M' if press else 'm'))
+		pty_write(
+			t,
+			transmute([]u8)fmt.tprintf("\x1b[<%d;%d;%d%c", b, x + 1, y + 1, 'M' if press else 'm'),
+		)
 	} else {
 		if !press do b = 3 + (b & ~int(3))
 		if x > 222 || y > 222 do return
@@ -1226,7 +1373,8 @@ on_mouse_button :: proc(e: sdl.MouseButtonEvent) {
 	}
 	if e.button == 1 {
 		if e.down {
-			if d := divider_at(current_tab().root, px, py); d != nil {app.drag = d; app.redraw = true; return}
+			if d := divider_at(current_tab().root, px, py);
+			   d != nil {app.drag = d; app.redraw = true; return}
 		} else if app.drag != nil {app.drag = nil; app.redraw = true; return}
 	}
 	n := pane_at(px, py)
@@ -1259,7 +1407,12 @@ on_mouse_button :: proc(e: sdl.MouseButtonEvent) {
 		}
 		sync.mutex_lock(&t.mu)
 		abs := view_abs(t, y)
-		app.sel = Selection{active = e.clicks > 1, a = {abs, i64(x)}, b = {abs, i64(x)}, term = t}
+		app.sel = Selection {
+			active = e.clicks > 1,
+			a      = {abs, i64(x)},
+			b      = {abs, i64(x)},
+			term   = t,
+		}
 		app.sel_mode = min(int(e.clicks), 3)
 		expand_selection(t)
 		sync.mutex_unlock(&t.mu)
@@ -1308,7 +1461,9 @@ on_mouse_motion :: proc(e: sdl.MouseMotionEvent) {
 	}
 	if e.state == {} {
 		d := divider_at(current_tab().root, px, py)
-		_ = sdl.SetCursor(app.cursor_default if d == nil else app.cursor_ew if d.vertical else app.cursor_ns)
+		_ = sdl.SetCursor(
+			app.cursor_default if d == nil else app.cursor_ew if d.vertical else app.cursor_ns,
+		)
 	}
 	leaf := current_tab().focus
 	t := leaf.term
@@ -1342,13 +1497,19 @@ wheel_accum: f32
 
 click_to_move :: proc(t: ^Term, x, y: int) {
 	sync.mutex_lock(&t.mu)
-	at_prompt := !t.use_alt && !t.cmd_running && len(t.prompts) > 0 && t.view_off == 0 &&
-		view_abs(t, y) >= t.prompts[len(t.prompts) - 1] && t.mouse_mode == 0
+	at_prompt :=
+		!t.use_alt &&
+		!t.cmd_running &&
+		len(t.prompts) > 0 &&
+		t.view_off == 0 &&
+		view_abs(t, y) >= t.prompts[len(t.prompts) - 1] &&
+		t.mouse_mode == 0
 	delta := (y - t.cy) * t.cols + (x - t.cx)
 	app_cursor := t.app_cursor
 	sync.mutex_unlock(&t.mu)
 	if !at_prompt || delta == 0 || abs(delta) > 2000 do return
-	key := ("\x1bOC" if app_cursor else "\x1b[C") if delta > 0 else ("\x1bOD" if app_cursor else "\x1b[D")
+	key :=
+		("\x1bOC" if app_cursor else "\x1b[C") if delta > 0 else ("\x1bOD" if app_cursor else "\x1b[D")
 	b := strings.builder_make(context.temp_allocator)
 	for _ in 0 ..< abs(delta) do strings.write_string(&b, key)
 	send(strings.to_string(b))
@@ -1356,7 +1517,7 @@ click_to_move :: proc(t: ^Term, x, y: int) {
 
 on_wheel :: proc(e: sdl.MouseWheelEvent) {
 	px, py := int(e.mouse_x * app.density), int(e.mouse_y * app.density)
-	if app.tabbar_h > 0 && py < app.tabbar_h && e.integer_y != 0 { // wheel over the tab bar: switch tabs
+	if app.tabbar_h > 0 && py < app.tabbar_h && e.integer_y != 0 { 	// wheel over the tab bar: switch tabs
 		switch_tab((app.cur + (len(app.tabs) - 1 if e.integer_y > 0 else 1)) % len(app.tabs))
 		return
 	}
@@ -1374,7 +1535,8 @@ on_wheel :: proc(e: sdl.MouseWheelEvent) {
 		return
 	}
 	if t.use_alt && t.alt_scroll {
-		k := ("\x1bOA" if t.app_cursor else "\x1b[A") if lines > 0 else ("\x1bOB" if t.app_cursor else "\x1b[B")
+		k :=
+			("\x1bOA" if t.app_cursor else "\x1b[A") if lines > 0 else ("\x1bOB" if t.app_cursor else "\x1b[B")
 		for _ in 0 ..< abs(lines) do pty_write(t, transmute([]u8)k)
 		return
 	}
@@ -1391,53 +1553,61 @@ process_wake :: proc() {
 	}
 	if sync.atomic_exchange(&config_dirty, false) && config_file_mtime() != config_mtime do apply_config()
 	dead := make([dynamic]^Node, context.temp_allocator)
-	Ctx :: struct {dead: ^[dynamic]^Node, visible: bool}
+	Ctx :: struct {
+		dead:    ^[dynamic]^Node,
+		visible: bool,
+	}
 	for tab, ti in app.tabs {
 		ctx := Ctx{&dead, ti == app.cur}
-		for_leaves(tab.root, proc(n: ^Node, data: rawptr) {
-			ctx := (^Ctx)(data)
-			t := n.term
-			sync.mutex_lock(&t.mu)
-			defer sync.mutex_unlock(&t.mu)
-			if t.exited do append(ctx.dead, n)
-			if t.dirty && ctx.visible && !t.sync_output do app.redraw = true
-			if t.title_changed {
-				t.title_changed = false
-				app.redraw = true
-			}
-			if t.clipboard_pending {
-				t.clipboard_pending = false
-				// OSC 52: programs (also remote ones over ssh) may set the clipboard only if allowed.
-				if cfg.clipboard_write do _ = sdl.SetClipboardText(strings.clone_to_cstring(t.clipboard_set, context.temp_allocator))
-			}
-			if t.cmd_done.pending {
-				// Long command finished while you weren't looking at it: tell the desktop.
-				d := t.cmd_done
-				t.cmd_done.pending = false
-				unseen := !ctx.visible || sdl.GetKeyboardFocus() != app.window
-				if cfg.notify_after > 0 && d.seconds >= cfg.notify_after && unseen {
-					cmd := t.title if t.title != "" else "command"
-					head := "✓ 完了" if d.status == 0 else fmt.tprintf("✗ 失敗 (終了コード %d)", d.status)
-					notify(head, fmt.tprintf("%s — %.1f 秒", cmd, d.seconds))
+		for_leaves(
+			tab.root,
+			proc(n: ^Node, data: rawptr) {
+				ctx := (^Ctx)(data)
+				t := n.term
+				sync.mutex_lock(&t.mu)
+				defer sync.mutex_unlock(&t.mu)
+				if t.exited do append(ctx.dead, n)
+				if t.dirty && ctx.visible && !t.sync_output do app.redraw = true
+				if t.title_changed {
+					t.title_changed = false
+					app.redraw = true
 				}
-			}
-			if t.bell {
-				t.bell = false
-				app.bell_time = app.now
-				_ = sdl.FlashWindow(app.window, .BRIEFLY)
-			}
-			for msg in t.notify {
-				title, body := "kuraokami", msg
-				if i := strings.index_byte(msg, ';'); i >= 0 do title, body = msg[:i], msg[i + 1:]
-				// Rate-limited: a program spamming OSC 9 must not flood the desktop.
-				if app.now - app.last_notify >= 1 {
-					notify(title, body)
-					app.last_notify = app.now
+				if t.clipboard_pending {
+					t.clipboard_pending = false
+					// OSC 52: programs (also remote ones over ssh) may set the clipboard only if allowed.
+					if cfg.clipboard_write do _ = sdl.SetClipboardText(strings.clone_to_cstring(t.clipboard_set, context.temp_allocator))
 				}
-				delete(msg)
-			}
-			clear(&t.notify)
-		}, &ctx)
+				if t.cmd_done.pending {
+					// Long command finished while you weren't looking at it: tell the desktop.
+					d := t.cmd_done
+					t.cmd_done.pending = false
+					unseen := !ctx.visible || sdl.GetKeyboardFocus() != app.window
+					if cfg.notify_after > 0 && d.seconds >= cfg.notify_after && unseen {
+						cmd := t.title if t.title != "" else "command"
+						head :=
+							"✓ 完了" if d.status == 0 else fmt.tprintf("✗ 失敗 (終了コード %d)", d.status)
+						notify(head, fmt.tprintf("%s — %.1f 秒", cmd, d.seconds))
+					}
+				}
+				if t.bell {
+					t.bell = false
+					app.bell_time = app.now
+					_ = sdl.FlashWindow(app.window, .BRIEFLY)
+				}
+				for msg in t.notify {
+					title, body := "kuraokami", msg
+					if i := strings.index_byte(msg, ';'); i >= 0 do title, body = msg[:i], msg[i + 1:]
+					// Rate-limited: a program spamming OSC 9 must not flood the desktop.
+					if app.now - app.last_notify >= 1 {
+						notify(title, body)
+						app.last_notify = app.now
+					}
+					delete(msg)
+				}
+				clear(&t.notify)
+			},
+			&ctx,
+		)
 	}
 	for n in dead do close_pane(n)
 	if app.running && len(app.tabs) > 0 {
@@ -1458,8 +1628,17 @@ main :: proc() {
 			fmt.println("kuraokami", VERSION)
 			return
 		case "-h", "--help":
-			fmt.println("usage: kuraokami [-e command args...]\nconfig:", config_path())
+			fmt.println("usage: kuraokami [--working-directory DIR] [--quick] [--shell] [-e command args...]")
+			fmt.println("  --shell   no window: start the shell with kuraokami's integration (for other terminals, e.g. Zed)")
+			fmt.println("config:", config_path())
 			return
+		case "--shell":
+			shell_mode = true
+		case "-d", "--working-directory":
+			if i + 1 < len(args) {
+				app.cli_cwd = args[i + 1]
+				i += 1
+			}
 		case "--quick":
 			if quick_send_toggle() do return // an instance is running: it shows/hides itself
 			app.quick = true
@@ -1471,6 +1650,7 @@ main :: proc() {
 	platform_init()
 	errs := config_load()
 	install_shell_integration()
+	if shell_mode {run_shell_mode(); return}
 	if kf_init() == 0 {fmt.eprintln("kuraokami: freetype/fontconfig init failed"); os.exit(1)}
 
 	_ = sdl.SetHint(sdl.HINT_KEYCODE_OPTIONS, "unmodified,latin_letters")
@@ -1495,14 +1675,18 @@ main :: proc() {
 	if cfg.renderer != "gles" do glctx = sdl.GL_CreateContext(app.window)
 	if glctx == nil {
 		// No desktop GL 3.3 (Raspberry Pi, some ARM boards, VMs): fall back to OpenGL ES 3.0.
-		_ = sdl.GL_SetAttribute(.CONTEXT_PROFILE_MASK, i32(transmute(u32)sdl.GL_CONTEXT_PROFILE_ES))
+		_ = sdl.GL_SetAttribute(
+			.CONTEXT_PROFILE_MASK,
+			i32(transmute(u32)sdl.GL_CONTEXT_PROFILE_ES),
+		)
 		_ = sdl.GL_SetAttribute(.CONTEXT_MAJOR_VERSION, 3)
 		_ = sdl.GL_SetAttribute(.CONTEXT_MINOR_VERSION, 0)
 		when ODIN_OS == .Darwin do _ = sdl.GL_SetAttribute(.CONTEXT_FLAGS, 0)
 		glctx = sdl.GL_CreateContext(app.window)
 		ren.gles = true
 	}
-	if glctx == nil {fmt.eprintln("kuraokami: no OpenGL 3.3 or OpenGL ES 3.0:", sdl.GetError()); os.exit(1)}
+	if glctx ==
+	   nil {fmt.eprintln("kuraokami: no OpenGL 3.3 or OpenGL ES 3.0:", sdl.GetError()); os.exit(1)}
 	gl.load_up_to(3, 3, sdl.gl_set_proc_address)
 	_ = sdl.GL_SetSwapInterval(1)
 	if !renderer_init() {fmt.eprintln("kuraokami: shader compile failed"); os.exit(1)}
@@ -1579,7 +1763,7 @@ handle_event :: proc(ev: ^sdl.Event) {
 	if u32(ev.type) == app.wake_type {process_wake(); return}
 	#partial switch ev.type {
 	case .QUIT:
-		if app.quick {quick_hide(); return} // the quick terminal stays alive in the background
+		if app.quick {quick_hide(); return} 	// the quick terminal stays alive in the background
 		if cfg.restore_session && len(app.exec_argv) == 0 do session_save()
 		app.running = false
 	case .WINDOW_PIXEL_SIZE_CHANGED, .WINDOW_RESIZED:
@@ -1587,7 +1771,8 @@ handle_event :: proc(ev: ^sdl.Event) {
 	case .WINDOW_DISPLAY_SCALE_CHANGED:
 		app.density = max(sdl.GetWindowPixelDensity(app.window), 1)
 		set_font_size(app.font_pt)
-	case .WINDOW_EXPOSED: app.redraw = true
+	case .WINDOW_EXPOSED:
+		app.redraw = true
 	case .WINDOW_FOCUS_GAINED, .WINDOW_FOCUS_LOST:
 		if ev.type == .WINDOW_FOCUS_LOST && app.quick && cfg.quick_autohide && !app.quick_hidden do quick_hide()
 		if ev.type == .WINDOW_FOCUS_LOST && app.preedit != "" {
@@ -1602,9 +1787,12 @@ handle_event :: proc(ev: ^sdl.Event) {
 			t := focused()
 			if t.focus_events do pty_write(t, transmute([]u8)string("\x1b[I" if ev.type == .WINDOW_FOCUS_GAINED else "\x1b[O"))
 		}
-	case .KEY_DOWN: on_key(ev.key)
-	case .KEY_UP: on_key_up(ev.key)
-	case .TEXT_INPUT: on_text(string(ev.text.text), ev.text.timestamp)
+	case .KEY_DOWN:
+		on_key(ev.key)
+	case .KEY_UP:
+		on_key_up(ev.key)
+	case .TEXT_INPUT:
+		on_text(string(ev.text.text), ev.text.timestamp)
 	case .TEXT_EDITING:
 		if ev.edit.text == nil || len(ev.edit.text) == 0 {
 			if app.preedit != "" do app.preedit_end = ev.edit.timestamp
@@ -1612,9 +1800,12 @@ handle_event :: proc(ev: ^sdl.Event) {
 		delete(app.preedit)
 		app.preedit = strings.clone(string(ev.edit.text))
 		app.redraw = true
-	case .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP: on_mouse_button(ev.button)
-	case .MOUSE_MOTION: on_mouse_motion(ev.motion)
-	case .MOUSE_WHEEL: on_wheel(ev.wheel)
+	case .MOUSE_BUTTON_DOWN, .MOUSE_BUTTON_UP:
+		on_mouse_button(ev.button)
+	case .MOUSE_MOTION:
+		on_mouse_motion(ev.motion)
+	case .MOUSE_WHEEL:
+		on_wheel(ev.wheel)
 	case .DROP_FILE:
 		// Drag & drop a file: paste its shell-quoted path. Control characters (a newline in a
 		// crafted file name would run a command) are replaced.
@@ -1628,10 +1819,26 @@ handle_event :: proc(ev: ^sdl.Event) {
 
 // working-directory = home (default) | inherit (the directory kuraokami was started in) | <path>
 start_dir :: proc() -> string {
+	if app.cli_cwd != "" && os.is_dir(expand_home(app.cli_cwd)) do return expand_home(app.cli_cwd)
 	switch cfg.working_dir {
-	case "inherit": return ""
-	case "", "home": return home_dir()
+	case "inherit":
+		return ""
+	case "", "home":
+		return home_dir()
 	}
 	p := expand_home(cfg.working_dir)
 	return p if os.is_dir(p) else home_dir()
+}
+
+// --shell: no window. Start the user's shell with kuraokami's integration (prompt, suggestions,
+// abbreviations, j, fastfetch) inside another terminal, e.g. Zed's terminal panel.
+shell_mode: bool
+
+run_shell_mode :: proc() {
+	// Other terminals may not show images: keep only text logos.
+	v := expand_home(strings.trim_space(cfg.fetch_logo))
+	if strings.contains_rune(v, '/') && !has_ext(v, TEXT_EXT[:]) do cfg.fetch_logo = ""
+	if app.cli_cwd != "" do _ = os.set_working_directory(start_dir())
+	argv, env := shell_argv()
+	exec_shell(argv, env)
 }

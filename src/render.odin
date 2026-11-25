@@ -1,22 +1,22 @@
 package kuraokami
 
-import "core:strings"
 import "core:c"
 import "core:fmt"
-import "core:math"
 import "core:hash"
+import "core:math"
+import "core:os"
 import "core:slice"
+import "core:strings"
 import "core:sync"
 import "core:unicode/utf8"
-import "core:os"
 import gl "vendor:OpenGL"
 
 Glyph :: struct {
-	u0, v0, u1, v1: f32,
+	u0, v0, u1, v1:  f32,
 	w, h, left, top: f32, // in pixels, already scaled
-	adv:            f32, // horizontal advance in pixels (proportional UI text)
-	color:          bool,
-	ok:             bool,
+	adv:             f32, // horizontal advance in pixels (proportional UI text)
+	color:           bool,
+	ok:              bool,
 }
 
 Shaped_Glyph :: struct {
@@ -26,19 +26,19 @@ Shaped_Glyph :: struct {
 }
 
 Fonts :: struct {
-	px:          int,
-	faces:       [dynamic]rawptr, // 0..3 = regular, bold, italic, bold-italic; then fallbacks
-	paths:       [dynamic]string,
-	fb_cache:    map[rune]int, // -1 = nothing covers it
+	px:                     int,
+	faces:                  [dynamic]rawptr, // 0..3 = regular, bold, italic, bold-italic; then fallbacks
+	paths:                  [dynamic]string,
+	fb_cache:               map[rune]int, // -1 = nothing covers it
 	cell_w, cell_h, ascent: int,
-	glyphs:      map[u64]Glyph,
-	shaped:      map[u64][]Shaped_Glyph,
-	atlas:       u32,
-	atlas_size:  int,
-	ax, ay, arow: int,
-	atlas_reset: bool,
-	ui_face:     int, // proportional UI font (tab bar); -1 if none
-	ui_ascent, ui_h: int,
+	glyphs:                 map[u64]Glyph,
+	shaped:                 map[u64][]Shaped_Glyph,
+	atlas:                  u32,
+	atlas_size:             int,
+	ax, ay, arow:           int,
+	atlas_reset:            bool,
+	ui_face:                int, // proportional UI font (tab bar); -1 if none
+	ui_ascent, ui_h:        int,
 }
 
 Vertex :: struct {
@@ -48,24 +48,30 @@ Vertex :: struct {
 }
 
 Renderer :: struct {
-	prog:      u32,
-	vao, vbo:  u32,
+	prog:               u32,
+	vao, vbo:           u32,
 	u_screen, u_offset: i32,
-	bg, fg, ov: [dynamic]Vertex,
-	width, height: int,
-	ox:        f32, // horizontal translation (tab slide animation)
+	bg, fg, ov:         [dynamic]Vertex,
+	width, height:      int,
+	ox:                 f32, // horizontal translation (tab slide animation)
 	// custom shader post-processing
-	post:      u32,
-	fbo, fbo_tex: u32,
-	fbo_w, fbo_h: int,
-	frame:     i32,
-	gles:      bool, // running on OpenGL ES 3.0 (shaders get an ES header)
+	post:               u32,
+	fbo, fbo_tex:       u32,
+	fbo_w, fbo_h:       int,
+	frame:              i32,
+	gles:               bool, // running on OpenGL ES 3.0 (shaders get an ES header)
 }
 
 fonts: Fonts
 ren: Renderer
 
-find_font :: proc(family: string, bold, italic: bool, cp: u32 = 0, strict := false, mono := true) -> string {
+find_font :: proc(
+	family: string,
+	bold, italic: bool,
+	cp: u32 = 0,
+	strict := false,
+	mono := true,
+) -> string {
 	buf: [1024]u8
 	fam := strings.clone_to_cstring(family, context.temp_allocator)
 	if kf_find(fam, c.int(bold), c.int(italic), cp, &buf[0], len(buf), strict, mono) == 0 do return ""
@@ -101,7 +107,10 @@ fonts_load :: proc(px: int) {
 	// Proportional UI font for the tab bar (browser-like), a bit smaller than the terminal text.
 	fonts.ui_face = -1
 	if ui := find_family_list(cfg.ui_font, false, false, false); ui != "" {
-		uf := kf_open(strings.clone_to_cstring(ui, context.temp_allocator), c.int(f32(px) * cfg.ui_font_scale + 0.5))
+		uf := kf_open(
+			strings.clone_to_cstring(ui, context.temp_allocator),
+			c.int(f32(px) * cfg.ui_font_scale + 0.5),
+		)
 		delete(ui)
 		if uf != nil {
 			append(&fonts.faces, uf)
@@ -130,7 +139,17 @@ atlas_clear :: proc() {
 		fonts.atlas_size = 1024
 	}
 	gl.BindTexture(gl.TEXTURE_2D, fonts.atlas)
-	gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, i32(fonts.atlas_size), i32(fonts.atlas_size), 0, gl.RGBA, gl.UNSIGNED_BYTE, nil)
+	gl.TexImage2D(
+		gl.TEXTURE_2D,
+		0,
+		gl.RGBA8,
+		i32(fonts.atlas_size),
+		i32(fonts.atlas_size),
+		0,
+		gl.RGBA,
+		gl.UNSIGNED_BYTE,
+		nil,
+	)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
 	gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
@@ -159,7 +178,10 @@ face_for :: proc(cp: rune, style: int) -> int {
 	if path != "" {
 		for p, i in fonts.paths do if p == path {idx = i; break}
 		if idx < 0 {
-			face := kf_open(strings.clone_to_cstring(path, context.temp_allocator), c.int(fonts.px))
+			face := kf_open(
+				strings.clone_to_cstring(path, context.temp_allocator),
+				c.int(fonts.px),
+			)
 			if face != nil && kf_has(face, u32(cp)) != 0 {
 				append(&fonts.faces, face)
 				append(&fonts.paths, path)
@@ -180,7 +202,22 @@ get_glyph :: proc(face: int, gid: u32) -> Glyph {
 	w, h, left, top, pitch, color: c.int
 	scale, adv: f32
 	buf: [^]u8
-	rendered := kf_render_glyph(fonts.faces[face], gid, c.int(fonts.px), &w, &h, &left, &top, &pitch, &color, &scale, &buf, &adv) != 0
+	rendered :=
+		kf_render_glyph(
+			fonts.faces[face],
+			gid,
+			c.int(fonts.px),
+			&w,
+			&h,
+			&left,
+			&top,
+			&pitch,
+			&color,
+			&scale,
+			&buf,
+			&adv,
+		) !=
+		0
 	if rendered do g.adv = adv * scale
 	if rendered && w > 0 && h > 0 {
 		sz := fonts.atlas_size
@@ -202,7 +239,7 @@ get_glyph :: proc(face: int, gid: u32) -> Glyph {
 				o := (y * int(w) + x) * 4
 				if color != 0 {
 					b, gg, r, a := src[x * 4], src[x * 4 + 1], src[x * 4 + 2], src[x * 4 + 3]
-					if a > 0 && a < 255 { // FreeType BGRA is premultiplied
+					if a > 0 && a < 255 { 	// FreeType BGRA is premultiplied
 						r = u8(min(255, int(r) * 255 / int(a)))
 						gg = u8(min(255, int(gg) * 255 / int(a)))
 						b = u8(min(255, int(b) * 255 / int(a)))
@@ -215,13 +252,30 @@ get_glyph :: proc(face: int, gid: u32) -> Glyph {
 		}
 		gl.BindTexture(gl.TEXTURE_2D, fonts.atlas)
 		gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
-		gl.TexSubImage2D(gl.TEXTURE_2D, 0, i32(fonts.ax), i32(fonts.ay), w, h, gl.RGBA, gl.UNSIGNED_BYTE, raw_data(px))
+		gl.TexSubImage2D(
+			gl.TEXTURE_2D,
+			0,
+			i32(fonts.ax),
+			i32(fonts.ay),
+			w,
+			h,
+			gl.RGBA,
+			gl.UNSIGNED_BYTE,
+			raw_data(px),
+		)
 		fs := f32(sz)
 		g = Glyph {
-			u0 = f32(fonts.ax) / fs, v0 = f32(fonts.ay) / fs,
-			u1 = f32(fonts.ax + int(w)) / fs, v1 = f32(fonts.ay + int(h)) / fs,
-			w = f32(w) * scale, h = f32(h) * scale, left = f32(left) * scale, top = f32(top) * scale,
-			color = color != 0, ok = true, adv = adv * scale,
+			u0    = f32(fonts.ax) / fs,
+			v0    = f32(fonts.ay) / fs,
+			u1    = f32(fonts.ax + int(w)) / fs,
+			v1    = f32(fonts.ay + int(h)) / fs,
+			w     = f32(w) * scale,
+			h     = f32(h) * scale,
+			left  = f32(left) * scale,
+			top   = f32(top) * scale,
+			color = color != 0,
+			ok    = true,
+			adv   = adv * scale,
 		}
 		// Bitmap emoji are sized for a much larger ppem: fit them into the cell height.
 		if color != 0 && g.h > f32(fonts.cell_h) {
@@ -248,7 +302,20 @@ shape_run :: proc(face: int, cps: []u32, cells: []u16) -> []Shaped_Glyph {
 	xadv := make([]c.int, max_g, context.temp_allocator)
 	xoff := make([]c.int, max_g, context.temp_allocator)
 	yoff := make([]c.int, max_g, context.temp_allocator)
-	n := int(kf_shape(fonts.faces[face], raw_data(cps), c.int(len(cps)), c.int(cfg.ligatures), raw_data(gids), raw_data(cl), raw_data(xadv), raw_data(xoff), raw_data(yoff), c.int(max_g)))
+	n := int(
+		kf_shape(
+			fonts.faces[face],
+			raw_data(cps),
+			c.int(len(cps)),
+			c.int(cfg.ligatures),
+			raw_data(gids),
+			raw_data(cl),
+			raw_data(xadv),
+			raw_data(xoff),
+			raw_data(yoff),
+			c.int(max_g),
+		),
+	)
 	out := make([]Shaped_Glyph, n)
 	pen: f32
 	cluster_start: f32
@@ -371,10 +438,25 @@ rgba :: #force_inline proc(c: u32, a: u8 = 255) -> [4]u8 {
 	return {u8(c >> 16), u8(c >> 8), u8(c), a}
 }
 
-quad :: proc(list: ^[dynamic]Vertex, x0, y0, x1, y1: f32, col: [4]u8, mode: f32 = 0, u0: f32 = 0, v0: f32 = 0, u1: f32 = 0, v1: f32 = 0) {
-	append(list,
-		Vertex{x0, y0, u0, v0, col, mode}, Vertex{x1, y0, u1, v0, col, mode}, Vertex{x1, y1, u1, v1, col, mode},
-		Vertex{x0, y0, u0, v0, col, mode}, Vertex{x1, y1, u1, v1, col, mode}, Vertex{x0, y1, u0, v1, col, mode})
+quad :: proc(
+	list: ^[dynamic]Vertex,
+	x0, y0, x1, y1: f32,
+	col: [4]u8,
+	mode: f32 = 0,
+	u0: f32 = 0,
+	v0: f32 = 0,
+	u1: f32 = 0,
+	v1: f32 = 0,
+) {
+	append(
+		list,
+		Vertex{x0, y0, u0, v0, col, mode},
+		Vertex{x1, y0, u1, v0, col, mode},
+		Vertex{x1, y1, u1, v1, col, mode},
+		Vertex{x0, y0, u0, v0, col, mode},
+		Vertex{x1, y1, u1, v1, col, mode},
+		Vertex{x0, y1, u0, v1, col, mode},
+	)
 }
 
 glyph_at :: proc(list: ^[dynamic]Vertex, g: Glyph, x, baseline: f32, fg: [4]u8) {
@@ -389,7 +471,13 @@ glyph_at :: proc(list: ^[dynamic]Vertex, g: Glyph, x, baseline: f32, fg: [4]u8) 
 glyph_quad :: proc(list: ^[dynamic]Vertex, cp: rune, style: int, x, y: f32, fg: [4]u8) {
 	f := face_for(cp, style)
 	if f < 0 do f = 0
-	glyph_at(list, get_glyph(f, kf_glyph_index(fonts.faces[f], u32(cp))), x, y + f32(fonts.ascent), fg)
+	glyph_at(
+		list,
+		get_glyph(f, kf_glyph_index(fonts.faces[f], u32(cp))),
+		x,
+		y + f32(fonts.ascent),
+		fg,
+	)
 }
 
 flush :: proc(list: ^[dynamic]Vertex, tex: u32) {
@@ -400,12 +488,14 @@ flush :: proc(list: ^[dynamic]Vertex, tex: u32) {
 	clear(list)
 }
 
-Rect :: struct {x, y, w, h: int}
+Rect :: struct {
+	x, y, w, h: int,
+}
 
 Selection :: struct {
-	active:   bool,
-	a, b:     [2]i64, // {abs_line, col}
-	term:     ^Term,
+	active: bool,
+	a, b:   [2]i64, // {abs_line, col}
+	term:   ^Term,
 }
 
 in_selection :: proc(s: ^Selection, abs: i64, x: int) -> bool {
@@ -439,7 +529,17 @@ image_texture :: proc(img: ^Image) -> u32 {
 	if img.tex_ver != img.version {
 		gl.BindTexture(gl.TEXTURE_2D, img.tex)
 		gl.PixelStorei(gl.UNPACK_ALIGNMENT, 1)
-		gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, i32(img.w), i32(img.h), 0, gl.RGBA, gl.UNSIGNED_BYTE, raw_data(img.pixels))
+		gl.TexImage2D(
+			gl.TEXTURE_2D,
+			0,
+			gl.RGBA8,
+			i32(img.w),
+			i32(img.h),
+			0,
+			gl.RGBA,
+			gl.UNSIGNED_BYTE,
+			raw_data(img.pixels),
+		)
 		img.tex_ver = img.version
 	}
 	return img.tex
@@ -457,22 +557,34 @@ draw_images :: proc(t: ^Term, r: Rect, off: int, frac: f32, neg: bool) {
 		if !ok do continue
 		x0 := f32(r.x) + f32(p.col) * cw
 		y0 := f32(r.y) + (f32(y) + frac) * ch
-		quad(&ren.ov, x0, y0, x0 + f32(p.cols) * cw, y0 + f32(p.rows) * ch, {255, 255, 255, 255}, 2, 0, 0, 1, 1)
+		quad(
+			&ren.ov,
+			x0,
+			y0,
+			x0 + f32(p.cols) * cw,
+			y0 + f32(p.rows) * ch,
+			{255, 255, 255, 255},
+			2,
+			0,
+			0,
+			1,
+			1,
+		)
 		flush(&ren.ov, image_texture(img))
 	}
 }
 
 Draw_Opts :: struct {
-	focused:       bool,
-	sel:           ^Selection,
-	preedit:       string,
-	view_vis:      f32, // animated scrollback offset in lines
-	cursor:        [2]f32, // animated cursor position (pixels, relative to rect)
-	trail:         [2]f32, // lagging trail position
-	cursor_alpha:  f32,
+	focused:        bool,
+	sel:            ^Selection,
+	preedit:        string,
+	view_vis:       f32, // animated scrollback offset in lines
+	cursor:         [2]f32, // animated cursor position (pixels, relative to rect)
+	trail:          [2]f32, // lagging trail position
+	cursor_alpha:   f32,
 	cursor_arrived: bool,
-	search:        []rune,
-	search_cur:    [2]i64,
+	search:         []rune,
+	search_cur:     [2]i64,
 }
 
 Cell_Paint :: struct {
@@ -487,25 +599,36 @@ scissor :: proc(x, y, w, h: int) {
 
 // Immutable copy of what one frame needs, taken under t.mu so shaping/drawing never blocks the PTY reader.
 Snap :: struct {
-	cols, rows:   int,
-	lines:        [][]Cell,
-	abs:          []i64,
-	hl:           [][]u8, // search highlight per line (nil when no search)
-	clusters:     map[rune]string,
-	palette:      [256]u32,
+	cols, rows:     int,
+	lines:          [][]Cell,
+	abs:            []i64,
+	hl:             [][]u8, // search highlight per line (nil when no search)
+	clusters:       map[rune]string,
+	palette:        [256]u32,
 	fg, bg, cursor: u32,
-	reverse:      bool,
-	cx, cy:       int,
-	cursor_hidden: bool,
-	cursor_shape: int,
-	off:          int,
-	frac, vis:    f32,
-	y0:           int,
+	reverse:        bool,
+	cx, cy:         int,
+	cursor_hidden:  bool,
+	cursor_shape:   int,
+	off:            int,
+	frac, vis:      f32,
+	y0:             int,
 }
 
 snap_take :: proc(t: ^Term, o: Draw_Opts) -> Snap {
-	s := Snap{cols = t.cols, rows = t.rows, palette = t.palette, fg = t.fg_color, bg = t.bg_color, cursor = t.cursor_color,
-		reverse = t.reverse, cx = t.cx, cy = t.cy, cursor_hidden = t.cursor_hidden, cursor_shape = t.cursor_shape}
+	s := Snap {
+		cols          = t.cols,
+		rows          = t.rows,
+		palette       = t.palette,
+		fg            = t.fg_color,
+		bg            = t.bg_color,
+		cursor        = t.cursor_color,
+		reverse       = t.reverse,
+		cx            = t.cx,
+		cy            = t.cy,
+		cursor_hidden = t.cursor_hidden,
+		cursor_shape  = t.cursor_shape,
+	}
 	s.vis = clamp(o.view_vis, 0, f32(screen(t).count - t.rows))
 	s.off = int(math.floor(s.vis))
 	s.frac = s.vis - f32(s.off)
@@ -609,7 +732,14 @@ draw_term :: proc(t: ^Term, r: Rect, o: Draw_Opts) {
 				fg = bgdef
 				is_default_bg = false
 			}
-			if show_cursor && o.focused && block && o.cursor_arrived && o.cursor_alpha > 0.5 && off == 0 && y == s.cy && x == s.cx {
+			if show_cursor &&
+			   o.focused &&
+			   block &&
+			   o.cursor_arrived &&
+			   o.cursor_alpha > 0.5 &&
+			   off == 0 &&
+			   y == s.cy &&
+			   x == s.cx {
 				fg = bg
 			}
 			if .Dim in cell.attr do fg = mix(fg, bg, 0.4)
@@ -617,7 +747,11 @@ draw_term :: proc(t: ^Term, r: Rect, o: Draw_Opts) {
 			wcells := 2 if cell.wide == 1 else 1
 			if !is_default_bg do quad(&ren.bg, px, py, px + f32(cw * wcells), py + f32(ch), rgba(bg, cell_alpha))
 			if cell.ch > ' ' && .Hidden not_in cell.attr {
-				paint[x] = {fg, (1 if .Bold in cell.attr else 0) | (2 if .Italic in cell.attr else 0), true}
+				paint[x] = {
+					fg,
+					(1 if .Bold in cell.attr else 0) | (2 if .Italic in cell.attr else 0),
+					true,
+				}
 			}
 			if .Underline in cell.attr || cell.link != 0 {
 				uy := py + f32(fonts.ascent) + 2
@@ -658,12 +792,24 @@ draw_term :: proc(t: ^Term, r: Rect, o: Draw_Opts) {
 			if needs_shape {
 				for sg in shape_run(face, cps[:], cmap[:]) {
 					cx := start + int(sg.cell)
-					glyph_at(&ren.fg, get_glyph(face, sg.gid), f32(r.x + cx * cw) + sg.x, baseline - sg.y, rgba(paint[cx].fg))
+					glyph_at(
+						&ren.fg,
+						get_glyph(face, sg.gid),
+						f32(r.x + cx * cw) + sg.x,
+						baseline - sg.y,
+						rgba(paint[cx].fg),
+					)
 				}
 			} else {
 				for cp, k in cps {
 					cx := start + int(cmap[k])
-					glyph_at(&ren.fg, get_glyph(face, kf_glyph_index(fonts.faces[face], cp)), f32(r.x + cx * cw), baseline, rgba(paint[cx].fg))
+					glyph_at(
+						&ren.fg,
+						get_glyph(face, kf_glyph_index(fonts.faces[face], cp)),
+						f32(r.x + cx * cw),
+						baseline,
+						rgba(paint[cx].fg),
+					)
 				}
 			}
 		}
@@ -678,7 +824,14 @@ draw_term :: proc(t: ^Term, r: Rect, o: Draw_Opts) {
 		if o.focused && cfg.cursor_trail && !o.cursor_arrived {
 			tx := f32(r.x) + o.trail[0]
 			ty := f32(r.y) + o.trail[1] + vis * f32(ch)
-			quad(&ren.bg, min(px, tx), min(py, ty), max(px, tx) + cwf, max(py, ty) + chf, rgba(s.cursor, a / 3))
+			quad(
+				&ren.bg,
+				min(px, tx),
+				min(py, ty),
+				max(px, tx) + cwf,
+				max(py, ty) + chf,
+				rgba(s.cursor, a / 3),
+			)
 		}
 		if !o.focused {
 			quad(&ren.ov, px, py, px + cwf, py + 1, cc)
@@ -699,7 +852,7 @@ draw_term :: proc(t: ^Term, r: Rect, o: Draw_Opts) {
 		draw_text(&ren.ov, px, py, o.preedit, s.fg, mix(s.bg, s.fg, 0.15), true)
 	}
 	flush(&ren.bg, fonts.atlas)
-	if len(t.gfx.placements) > 0 { // racy peek is fine: only skips taking the lock
+	if len(t.gfx.placements) > 0 { 	// racy peek is fine: only skips taking the lock
 		sync.mutex_lock(&t.mu)
 		draw_images(t, r, off, frac, true)
 		flush(&ren.fg, fonts.atlas)
@@ -717,7 +870,14 @@ utf8_first :: proc(s: string) -> (rune, bool) {
 }
 
 // Returns width in pixels.
-draw_text :: proc(list: ^[dynamic]Vertex, x, y: f32, s: string, fg, bg: u32, underline := false, alpha: u8 = 255) -> f32 {
+draw_text :: proc(
+	list: ^[dynamic]Vertex,
+	x, y: f32,
+	s: string,
+	fg, bg: u32,
+	underline := false,
+	alpha: u8 = 255,
+) -> f32 {
 	cx := x
 	for ch in s {
 		w := rune_width(ch)
@@ -744,13 +904,29 @@ frame_begin :: proc(w, h: int) {
 		if ren.fbo_tex == 0 || ren.fbo_w != w || ren.fbo_h != h {
 			if ren.fbo_tex == 0 do gl.GenTextures(1, &ren.fbo_tex)
 			gl.BindTexture(gl.TEXTURE_2D, ren.fbo_tex)
-			gl.TexImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, i32(w), i32(h), 0, gl.RGBA, gl.UNSIGNED_BYTE, nil)
+			gl.TexImage2D(
+				gl.TEXTURE_2D,
+				0,
+				gl.RGBA8,
+				i32(w),
+				i32(h),
+				0,
+				gl.RGBA,
+				gl.UNSIGNED_BYTE,
+				nil,
+			)
 			gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
 			gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
 			gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
 			gl.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
 			gl.BindFramebuffer(gl.FRAMEBUFFER, ren.fbo)
-			gl.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, ren.fbo_tex, 0)
+			gl.FramebufferTexture2D(
+				gl.FRAMEBUFFER,
+				gl.COLOR_ATTACHMENT0,
+				gl.TEXTURE_2D,
+				ren.fbo_tex,
+				0,
+			)
 			ren.fbo_w, ren.fbo_h = w, h
 		}
 		gl.BindFramebuffer(gl.FRAMEBUFFER, ren.fbo)
@@ -778,11 +954,11 @@ set_offset :: proc(ox: f32) {
 }
 
 Post_Uniforms :: struct {
-	time, dt:         f32,
-	cursor, prev:     [4]f32, // x, y(top, from bottom), w, h
-	cursor_color:     u32,
-	cursor_change:    f32,
-	mouse:            [2]f32,
+	time, dt:      f32,
+	cursor, prev:  [4]f32, // x, y(top, from bottom), w, h
+	cursor_color:  u32,
+	cursor_change: f32,
+	mouse:         [2]f32,
 }
 
 // Run the custom shader over the offscreen frame into the window.
@@ -801,12 +977,42 @@ frame_post :: proc(u: Post_Uniforms) {
 	gl.Uniform1f(gl.GetUniformLocation(p, "iTime"), u.time)
 	gl.Uniform1f(gl.GetUniformLocation(p, "iTimeDelta"), u.dt)
 	gl.Uniform1i(gl.GetUniformLocation(p, "iFrame"), ren.frame)
-	gl.Uniform4f(gl.GetUniformLocation(p, "iMouse"), u.mouse[0], f32(ren.height) - u.mouse[1], 0, 0)
-	gl.Uniform4f(gl.GetUniformLocation(p, "iCurrentCursor"), u.cursor[0], u.cursor[1], u.cursor[2], u.cursor[3])
-	gl.Uniform4f(gl.GetUniformLocation(p, "iPreviousCursor"), u.prev[0], u.prev[1], u.prev[2], u.prev[3])
+	gl.Uniform4f(
+		gl.GetUniformLocation(p, "iMouse"),
+		u.mouse[0],
+		f32(ren.height) - u.mouse[1],
+		0,
+		0,
+	)
+	gl.Uniform4f(
+		gl.GetUniformLocation(p, "iCurrentCursor"),
+		u.cursor[0],
+		u.cursor[1],
+		u.cursor[2],
+		u.cursor[3],
+	)
+	gl.Uniform4f(
+		gl.GetUniformLocation(p, "iPreviousCursor"),
+		u.prev[0],
+		u.prev[1],
+		u.prev[2],
+		u.prev[3],
+	)
 	cc := rgba(u.cursor_color)
-	gl.Uniform4f(gl.GetUniformLocation(p, "iCurrentCursorColor"), f32(cc[0]) / 255, f32(cc[1]) / 255, f32(cc[2]) / 255, 1)
-	gl.Uniform4f(gl.GetUniformLocation(p, "iPreviousCursorColor"), f32(cc[0]) / 255, f32(cc[1]) / 255, f32(cc[2]) / 255, 1)
+	gl.Uniform4f(
+		gl.GetUniformLocation(p, "iCurrentCursorColor"),
+		f32(cc[0]) / 255,
+		f32(cc[1]) / 255,
+		f32(cc[2]) / 255,
+		1,
+	)
+	gl.Uniform4f(
+		gl.GetUniformLocation(p, "iPreviousCursorColor"),
+		f32(cc[0]) / 255,
+		f32(cc[1]) / 255,
+		f32(cc[2]) / 255,
+		1,
+	)
 	gl.Uniform1f(gl.GetUniformLocation(p, "iTimeCursorChange"), u.cursor_change)
 	gl.BindVertexArray(ren.vao)
 	gl.DrawArrays(gl.TRIANGLES, 0, 3)
@@ -816,10 +1022,14 @@ frame_post :: proc(u: Post_Uniforms) {
 
 // ---------- built-in shaders (shadertoy/ghostty format) ----------
 
-Builtin_Shader :: struct {name, src: string}
+Builtin_Shader :: struct {
+	name, src: string,
+}
 
 BUILTIN_SHADERS := [?]Builtin_Shader {
-	{"crt", `
+	{
+		"crt",
+		`
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 	vec2 uv = fragCoord / iResolution.xy;
 	vec2 c = uv - 0.5;
@@ -831,8 +1041,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 	float vig = smoothstep(0.85, 0.25, length(c));
 	float flicker = 0.985 + 0.015 * sin(iTime * 50.0);
 	fragColor = vec4(col * scan * vig * flicker, texture(iChannel0, uv).a);
-}`},
-	{"aurora", `
+}`,
+	},
+	{
+		"aurora",
+		`
 float h(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 float n(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
 	return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
@@ -846,8 +1059,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 	aur *= smoothstep(0.6, 1.3, band) * (0.25 + 0.35 * uv.y);
 	float isbg = 1.0 - smoothstep(0.02, 0.12, distance(term.rgb, bg.rgb));
 	fragColor = vec4(term.rgb + aur * isbg, term.a);
-}`},
-	{"cursor-glow", `
+}`,
+	},
+	{
+		"cursor-glow",
+		`
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 	vec2 uv = fragCoord / iResolution.xy;
 	vec4 term = texture(iChannel0, uv);
@@ -857,7 +1073,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 	float pulse = 1.0 + 0.6 * exp(-since * 6.0);
 	float glow = exp(-d / (iCurrentCursor.w * 1.6 * pulse)) * 0.35;
 	fragColor = vec4(term.rgb + iCurrentCursorColor.rgb * glow, term.a);
-}`},
+}`,
+	},
 }
 
 // font-family may be a comma-separated list: the first family that is really installed wins
@@ -876,13 +1093,24 @@ find_family_list :: proc(list: string, bold, italic: bool, mono := true) -> stri
 // Shaders are written for GL 3.3 core; on OpenGL ES 3.0 only the header differs.
 glsl :: proc(src: string) -> string {
 	if !ren.gles do return src
-	s, _ := strings.replace(src, "#version 330 core", "#version 300 es\nprecision highp float;\nprecision highp int;", 1, context.temp_allocator)
+	s, _ := strings.replace(
+		src,
+		"#version 330 core",
+		"#version 300 es\nprecision highp float;\nprecision highp int;",
+		1,
+		context.temp_allocator,
+	)
 	return s
 }
 
 // Rounded rectangle from plain quads + four antialiased quarter discs (mode 3).
 // top_only: square bottom corners (tabs that join the content below).
-rounded_rect :: proc(list: ^[dynamic]Vertex, x0, y0, x1, y1, radius: f32, col: [4]u8, top_only := false) {
+rounded_rect :: proc(
+	list: ^[dynamic]Vertex,
+	x0, y0, x1, y1, radius: f32,
+	col: [4]u8,
+	top_only := false,
+) {
 	r := min(radius, (x1 - x0) / 2, (y1 - y0) / 2)
 	if r <= 0.5 {quad(list, x0, y0, x1, y1, col); return}
 	rb := f32(0) if top_only else r

@@ -4,9 +4,20 @@ import "core:hash"
 
 // Minimal PNG writer (stored/uncompressed deflate): debug frame dumps and fetch-logo frames.
 // channels: 3 (RGB) or 4 (RGBA). bottom_up: rows come from OpenGL read-back.
-png_encode :: proc(px: []u8, w, h, channels: int, bottom_up := false, allocator := context.temp_allocator) -> []u8 {
+png_encode :: proc(
+	px: []u8,
+	w, h, channels: int,
+	bottom_up := false,
+	allocator := context.temp_allocator,
+) -> []u8 {
 	out := make([dynamic]u8, allocator)
-	be32 :: proc(out: ^[dynamic]u8, v: u32) {append(out, u8(v >> 24), u8(v >> 16), u8(v >> 8), u8(v))}
+	be32 :: proc(out: ^[dynamic]u8, v: u32) {append(
+			out,
+			u8(v >> 24),
+			u8(v >> 16),
+			u8(v >> 8),
+			u8(v),
+		)}
 	chunk :: proc(out: ^[dynamic]u8, kind: string, data: []u8) {
 		be32(out, u32(len(data)))
 		start := len(out)

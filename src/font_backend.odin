@@ -3,11 +3,11 @@ package kuraokami
 // Font backend in pure Odin: FreeType (rasterizing) + fontconfig (lookup) bindings,
 // and Odin's vendored kb_text_shape for OpenType shaping (ligatures, marks, complex scripts).
 
+import kbts "../third_party/kbts"
+import "base:runtime"
 import "core:c"
 import "core:os"
 import "core:strings"
-import "base:runtime"
-import kbts "../third_party/kbts"
 
 when ODIN_OS == .Windows {
 	foreign import ft "system:freetype.lib"
@@ -16,12 +16,19 @@ when ODIN_OS == .Windows {
 }
 
 // ---- FreeType public structs (layouts verified against the C headers in test_freetype_layout) ----
-FT_Generic :: struct {data, finalizer: rawptr}
-FT_BBox :: struct {xMin, yMin, xMax, yMax: c.long}
-FT_Bitmap_Size :: struct {height, width: i16, size, x_ppem, y_ppem: c.long}
+FT_Generic :: struct {
+	data, finalizer: rawptr,
+}
+FT_BBox :: struct {
+	xMin, yMin, xMax, yMax: c.long,
+}
+FT_Bitmap_Size :: struct {
+	height, width:        i16,
+	size, x_ppem, y_ppem: c.long,
+}
 FT_Size_Metrics :: struct {
-	x_ppem, y_ppem: u16,
-	x_scale, y_scale: c.long,
+	x_ppem, y_ppem:                           u16,
+	x_scale, y_scale:                         c.long,
 	ascender, descender, height, max_advance: c.long,
 }
 FT_SizeRec :: struct {
@@ -38,32 +45,52 @@ FT_Bitmap :: struct {
 	palette_mode: u8,
 	palette:      rawptr,
 }
-FT_Glyph_Metrics :: struct {width, height, horiBearingX, horiBearingY, horiAdvance, vertBearingX, vertBearingY, vertAdvance: c.long}
+FT_Glyph_Metrics :: struct {
+	width,
+	height,
+	horiBearingX,
+	horiBearingY,
+	horiAdvance,
+	vertBearingX,
+	vertBearingY,
+	vertAdvance: c.long,
+}
 FT_GlyphSlotRec :: struct {
-	library, face, next: rawptr,
-	glyph_index:         u32,
-	generic:             FT_Generic,
-	metrics:             FT_Glyph_Metrics,
+	library, face, next:                  rawptr,
+	glyph_index:                          u32,
+	generic:                              FT_Generic,
+	metrics:                              FT_Glyph_Metrics,
 	linearHoriAdvance, linearVertAdvance: c.long,
-	advance:             [2]c.long,
-	format:              u32,
-	bitmap:              FT_Bitmap,
-	bitmap_left, bitmap_top: c.int,
+	advance:                              [2]c.long,
+	format:                               u32,
+	bitmap:                               FT_Bitmap,
+	bitmap_left, bitmap_top:              c.int,
 }
 FT_FaceRec :: struct {
-	num_faces, face_index, face_flags, style_flags, num_glyphs: c.long,
-	family_name, style_name: cstring,
-	num_fixed_sizes:     c.int,
-	available_sizes:     [^]FT_Bitmap_Size,
-	num_charmaps:        c.int,
-	charmaps:            rawptr,
-	generic:             FT_Generic,
-	bbox:                FT_BBox,
-	units_per_EM:        u16,
-	ascender, descender, height, max_advance_width, max_advance_height, underline_position, underline_thickness: i16,
-	glyph:               ^FT_GlyphSlotRec,
-	size:                ^FT_SizeRec,
-	charmap:             rawptr,
+	num_faces,
+	face_index,
+	face_flags,
+	style_flags,
+	num_glyphs:                                                  c.long,
+	family_name,
+	style_name:                                                                                     cstring,
+	num_fixed_sizes:                                                                                             c.int,
+	available_sizes:                                                                                             [^]FT_Bitmap_Size,
+	num_charmaps:                                                                                                c.int,
+	charmaps:                                                                                                    rawptr,
+	generic:                                                                                                     FT_Generic,
+	bbox:                                                                                                        FT_BBox,
+	units_per_EM:                                                                                                u16,
+	ascender,
+	descender,
+	height,
+	max_advance_width,
+	max_advance_height,
+	underline_position,
+	underline_thickness: i16,
+	glyph:                                                                                                       ^FT_GlyphSlotRec,
+	size:                                                                                                        ^FT_SizeRec,
+	charmap:                                                                                                     rawptr,
 }
 
 FT_LOAD_RENDER :: i32(1 << 2)
@@ -85,17 +112,17 @@ foreign ft {
 }
 
 KFace :: struct {
-	ft:      ^FT_FaceRec,
-	path:    string,
+	ft:       ^FT_FaceRec,
+	path:     string,
 	// kb_text_shape state, created lazily on the first run that needs shaping
-	kb_data: []u8,
-	kb_font: kbts.font,
-	kb_ctx:  ^kbts.shape_context,
-	kb_ok:   bool,
+	kb_data:  []u8,
+	kb_font:  kbts.font,
+	kb_ctx:   ^kbts.shape_context,
+	kb_ok:    bool,
 	kb_tried: bool,
 	// cmap cache: FT_Get_Char_Index is slow on big fonts (Nerd Fonts) and runs per glyph per frame
-	ascii:   [128]u32, // glyph id + 1 (0 = not looked up yet)
-	gid_map: map[u32]u32,
+	ascii:    [128]u32, // glyph id + 1 (0 = not looked up yet)
+	gid_map:  map[u32]u32,
 }
 
 ft_lib: rawptr
@@ -153,7 +180,15 @@ kf_glyph_index :: proc(p: rawptr, cp: u32) -> u32 {
 kf_has :: proc(p: rawptr, cp: u32) -> c.int {return 1 if kf_glyph_index(p, cp) != 0 else 0}
 
 // Rasterize a glyph id. color=1 means BGRA (emoji), else 8-bit coverage. scale fits bitmap fonts to px.
-kf_render_glyph :: proc(p: rawptr, gid: u32, px: c.int, w, h, left, top, pitch, color: ^c.int, scale: ^f32, buf: ^[^]u8, adv: ^f32 = nil) -> c.int {
+kf_render_glyph :: proc(
+	p: rawptr,
+	gid: u32,
+	px: c.int,
+	w, h, left, top, pitch, color: ^c.int,
+	scale: ^f32,
+	buf: ^[^]u8,
+	adv: ^f32 = nil,
+) -> c.int {
 	f := (^KFace)(p).ft
 	if FT_Load_Glyph(f, gid, FT_LOAD_RENDER | FT_LOAD_COLOR | FT_LOAD_TARGET_LIGHT) != 0 do return 0
 	g := f.glyph
@@ -187,7 +222,15 @@ kb_prepare :: proc(k: ^KFace) -> bool {
 }
 
 // Shape UTF-32 text. clusters[i] = index into text. Positions in 1/64 px (same contract as before).
-kf_shape :: proc(p: rawptr, text: [^]u32, n: c.int, ligatures: c.int, gids, clusters: [^]u32, xadv, xoff, yoff: [^]c.int, max_out: c.int) -> c.int {
+kf_shape :: proc(
+	p: rawptr,
+	text: [^]u32,
+	n: c.int,
+	ligatures: c.int,
+	gids, clusters: [^]u32,
+	xadv, xoff, yoff: [^]c.int,
+	max_out: c.int,
+) -> c.int {
 	k := (^KFace)(p)
 	if !kb_prepare(k) {
 		// No shaper for this font: one glyph per codepoint.
@@ -269,7 +312,15 @@ when ODIN_OS != .Windows {
 
 	// Resolve family+style to a font file via fontconfig. If cp>0, the font must cover cp.
 	// strict: only accept a match whose family really is `family` (fontconfig otherwise substitutes silently).
-	kf_find :: proc(family: cstring, bold, italic: c.int, cp: u32, out: [^]u8, outlen: c.int, strict := false, mono := true) -> c.int {
+	kf_find :: proc(
+		family: cstring,
+		bold, italic: c.int,
+		cp: u32,
+		out: [^]u8,
+		outlen: c.int,
+		strict := false,
+		mono := true,
+	) -> c.int {
 		p := FcPatternCreate()
 		defer FcPatternDestroy(p)
 		if family != nil && len(family) > 0 do FcPatternAddString(p, "family", family)
@@ -311,7 +362,15 @@ when ODIN_OS != .Windows {
 	}
 } else {
 	// No fontconfig on Windows: probe well-known files in the system font directory.
-	kf_find :: proc(family: cstring, bold, italic: c.int, cp: u32, out: [^]u8, outlen: c.int, strict := false, mono := true) -> c.int {
+	kf_find :: proc(
+		family: cstring,
+		bold, italic: c.int,
+		cp: u32,
+		out: [^]u8,
+		outlen: c.int,
+		strict := false,
+		mono := true,
+	) -> c.int {
 		dir := os.get_env("WINDIR", context.temp_allocator)
 		if dir == "" do dir = "C:\\Windows"
 		put :: proc(s: string, out: [^]u8, outlen: c.int) -> c.int {
@@ -327,9 +386,24 @@ when ODIN_OS != .Windows {
 				if os.exists(path) do return put(path, out, outlen)
 			}
 			mono := [4]string{"consola.ttf", "consolab.ttf", "consolai.ttf", "consolaz.ttf"}
-			return put(strings.concatenate({dir, "\\Fonts\\", mono[(1 if bold != 0 else 0) + (2 if italic != 0 else 0)]}, context.temp_allocator), out, outlen)
+			return put(
+				strings.concatenate(
+					{dir, "\\Fonts\\", mono[(1 if bold != 0 else 0) + (2 if italic != 0 else 0)]},
+					context.temp_allocator,
+				),
+				out,
+				outlen,
+			)
 		}
-		fb := [?]string{"seguiemj.ttf", "YuGothM.ttc", "msgothic.ttc", "malgun.ttf", "msyh.ttc", "seguisym.ttf", "segoeui.ttf"}
+		fb := [?]string {
+			"seguiemj.ttf",
+			"YuGothM.ttc",
+			"msgothic.ttc",
+			"malgun.ttf",
+			"msyh.ttc",
+			"seguisym.ttf",
+			"segoeui.ttf",
+		}
 		for name, i in fb {
 			if string(family) == "emoji" && i > 0 do break
 			path := strings.concatenate({dir, "\\Fonts\\", name}, context.temp_allocator)

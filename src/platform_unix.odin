@@ -3,11 +3,11 @@ package kuraokami
 
 import "core:c"
 import "core:c/libc"
-import "core:sys/posix"
-import "core:os"
-import "core:thread"
 import "core:fmt"
+import "core:os"
 import "core:strings"
+import "core:sys/posix"
+import "core:thread"
 
 when ODIN_OS == .Darwin {
 	foreign import libc_ "system:System"
@@ -143,8 +143,24 @@ spawn_detached :: proc(args: []string) {
 
 notify :: proc(title, body: string) {
 	when ODIN_OS == .Darwin {
-		esc :: proc(s: string) -> string {r, _ := strings.replace_all(s, "\"", "\\\"", context.temp_allocator); return r}
-		spawn_detached({"osascript", "-e", fmt.tprintf("display notification \"%s\" with title \"%s\"", esc(body), esc(title))})
+		esc :: proc(s: string) -> string {r, _ := strings.replace_all(
+				s,
+				"\"",
+				"\\\"",
+				context.temp_allocator,
+			)
+			return r}
+		spawn_detached(
+			{
+				"osascript",
+				"-e",
+				fmt.tprintf(
+					"display notification \"%s\" with title \"%s\"",
+					esc(body),
+					esc(title),
+				),
+			},
+		)
 	} else {
 		spawn_detached({"notify-send", "--", title, body})
 	}
@@ -212,20 +228,21 @@ quick_listen :: proc(on_toggle: proc()) -> bool {
 	_ = posix.unlink(strings.clone_to_cstring(quick_socket_path(), context.temp_allocator)) // stale socket from a crash
 	fd := posix.socket(.UNIX, .STREAM)
 	if fd < 0 do return false
-	if posix.bind(fd, (^posix.sockaddr)(&addr), size_of(addr)) != .OK || posix.listen(fd, 4) != .OK {
+	if posix.bind(fd, (^posix.sockaddr)(&addr), size_of(addr)) != .OK ||
+	   posix.listen(fd, 4) != .OK {
 		posix.close(fd)
 		return false
 	}
 	thread.create_and_start_with_poly_data2(fd, on_toggle, proc(fd: posix.FD, on_toggle: proc()) {
-		for {
-			c := posix.accept(fd, nil, nil)
-			if c < 0 do continue
-			buf: [16]u8
-			n := read(i32(c), &buf[0], len(buf))
-			posix.close(c)
-			if n > 0 do on_toggle()
-		}
-	}, self_cleanup = true)
+			for {
+				c := posix.accept(fd, nil, nil)
+				if c < 0 do continue
+				buf: [16]u8
+				n := read(i32(c), &buf[0], len(buf))
+				posix.close(c)
+				if n > 0 do on_toggle()
+			}
+		}, self_cleanup = true)
 	return true
 }
 
@@ -260,4 +277,17 @@ run_capture :: proc(args: []string, limit: int) -> ([]u8, bool) {
 		append(&out, ..buf[:n])
 	}
 	return out[:], len(out) > 0
+}
+
+// Replace this process with the shell (used by --shell).
+exec_shell :: proc(args: []string, env: [][2]string) {
+	if len(args) == 0 do os.exit(1)
+	for e in env {
+		setenv(strings.clone_to_cstring(e[0], context.temp_allocator), strings.clone_to_cstring(e[1], context.temp_allocator), 1)
+	}
+	argv := make([]cstring, len(args) + 1, context.temp_allocator)
+	for a, i in args do argv[i] = strings.clone_to_cstring(a, context.temp_allocator)
+	execvp(argv[0], raw_data(argv))
+	fmt.eprintln("kuraokami --shell: cannot start", args[0])
+	os.exit(127)
 }

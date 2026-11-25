@@ -1,62 +1,76 @@
 package kuraokami
 
-import "core:os"
-import "core:strings"
-import "core:strconv"
 import "core:fmt"
+import "core:os"
+import "core:strconv"
+import "core:strings"
 import "core:time"
 
 Config :: struct {
-	font_family:    string,
-	font_size:      f32,
-	ligatures:      bool,
-	fg, bg, cursor: u32,
-	selection_bg:   u32,
-	selection_fg:   u32, // NO_COLOR = keep text color
-	opacity_cells:  bool, // translucent colored cell backgrounds too (like ghostty background-opacity-cells)
-	palette:        [16]u32,
-	opacity:        f32,
-	scrollback:     int,
-	shell:          string,
-	padding:        int,
-	copy_on_select: bool,
-	cursor_style:   int,
+	font_family:        string,
+	font_size:          f32,
+	ligatures:          bool,
+	fg, bg, cursor:     u32,
+	selection_bg:       u32,
+	selection_fg:       u32, // NO_COLOR = keep text color
+	opacity_cells:      bool, // translucent colored cell backgrounds too (like ghostty background-opacity-cells)
+	palette:            [16]u32,
+	opacity:            f32,
+	scrollback:         int,
+	shell:              string,
+	padding:            int,
+	copy_on_select:     bool,
+	cursor_style:       int,
 	// animation
-	animation:      bool,
-	cursor_blink:   bool,
-	cursor_trail:   bool,
-	smooth_scroll:  bool,
-	visual_bell:    bool,
-	custom_shader:  string,
-	shader_animation: bool,
+	animation:          bool,
+	cursor_blink:       bool,
+	cursor_trail:       bool,
+	smooth_scroll:      bool,
+	visual_bell:        bool,
+	custom_shader:      string,
+	shader_animation:   bool,
 	// startup
-	startup_fetch:  bool,
-	shell_integration: bool,
-	shell_preset:   bool,
-	clipboard_write: bool,
-	paste_protection: bool,
-	notify_after:   f64, // seconds; 0 = off
-	restore_session: bool,
-	quick_autohide: bool,
-	click_to_move:  bool,
-	renderer:       string, // "" auto | "gles"
-	tab_bar:        string, // always | auto | never
-	ui_font:        string, // proportional font for the tab bar
-	ui_font_scale:  f32,
-	working_dir:    string, // home | inherit | <path>
-	fetch_logo:     string,
-	fetch_logo_size: [2]int, // cells (width, height) for image logos
+	startup_fetch:      bool,
+	shell_integration:  bool,
+	shell_preset:       bool,
+	clipboard_write:    bool,
+	paste_protection:   bool,
+	notify_after:       f64, // seconds; 0 = off
+	restore_session:    bool,
+	quick_autohide:     bool,
+	click_to_move:      bool,
+	renderer:           string, // "" auto | "gles"
+	tab_bar:            string, // always | auto | never
+	ui_font:            string, // proportional font for the tab bar
+	ui_font_scale:      f32,
+	working_dir:        string, // home | inherit | <path>
+	fetch_logo:         string,
+	fetch_logo_size:    [2]int, // cells (width, height) for image logos
 	fetch_logo_seconds: f64, // how long an animated logo plays; 0 = forever
-	fetch_command:  string,
-	binds:          [dynamic]Keybind,
+	fetch_command:      string,
+	binds:              [dynamic]Keybind,
 }
 
 NO_COLOR :: u32(0xFFFFFFFF)
 
 // Default look: deep navy glass (matches the ame-shell Ghostty setup).
 DEFAULT_PALETTE := [16]u32 {
-	0x45475a, 0xf38ba8, 0xa6e3a1, 0xf9e2af, 0x89b4fa, 0xf5c2e7, 0x7fdceb, 0xbac2de,
-	0x585b70, 0xf38ba8, 0xa6e3a1, 0xf9e2af, 0x89b4fa, 0xf5c2e7, 0x94e2d5, 0xa6adc8,
+	0x45475a,
+	0xf38ba8,
+	0xa6e3a1,
+	0xf9e2af,
+	0x89b4fa,
+	0xf5c2e7,
+	0x7fdceb,
+	0xbac2de,
+	0x585b70,
+	0xf38ba8,
+	0xa6e3a1,
+	0xf9e2af,
+	0x89b4fa,
+	0xf5c2e7,
+	0x94e2d5,
+	0xa6adc8,
 }
 
 cfg: Config
@@ -65,42 +79,42 @@ config_mtime: time.Time
 config_defaults :: proc() {
 	delete(cfg.binds)
 	cfg = Config {
-		font_family      = "JetBrains Mono, JetBrainsMono Nerd Font Mono, JetBrainsMono Nerd Font, monospace",
-		font_size        = 12,
-		ligatures        = true,
-		fg               = 0xcdd6f4,
-		bg               = 0x060913,
-		cursor           = 0xcdd6f4,
-		selection_bg     = 0x89b4fa,
-		selection_fg     = 0x060913,
-		opacity_cells    = true,
-		cursor_style     = 6,
-		palette          = DEFAULT_PALETTE,
-		opacity          = 0.7,
-		scrollback       = 10000,
-		padding          = 24,
-		copy_on_select   = true,
-		animation        = true,
-		cursor_blink     = true,
-		cursor_trail     = true,
-		smooth_scroll    = true,
-		visual_bell      = true,
-		shader_animation = true,
-		startup_fetch    = true,
-		shell_integration = true,
-		shell_preset     = true,
-		clipboard_write  = true,
-		paste_protection = true,
-		notify_after     = 10,
-		restore_session  = false,
-		quick_autohide   = true,
-		click_to_move    = true,
-		tab_bar          = "always",
-		ui_font          = "Noto Sans CJK JP, Noto Sans, Inter, Cantarell, DejaVu Sans, sans-serif",
-		ui_font_scale    = 0.9,
-		fetch_logo_size  = {30, 14},
+		font_family        = "JetBrains Mono, JetBrainsMono Nerd Font Mono, JetBrainsMono Nerd Font, monospace",
+		font_size          = 12,
+		ligatures          = true,
+		fg                 = 0xcdd6f4,
+		bg                 = 0x060913,
+		cursor             = 0xcdd6f4,
+		selection_bg       = 0x89b4fa,
+		selection_fg       = 0x060913,
+		opacity_cells      = true,
+		cursor_style       = 6,
+		palette            = DEFAULT_PALETTE,
+		opacity            = 0.7,
+		scrollback         = 10000,
+		padding            = 24,
+		copy_on_select     = true,
+		animation          = true,
+		cursor_blink       = true,
+		cursor_trail       = true,
+		smooth_scroll      = true,
+		visual_bell        = true,
+		shader_animation   = true,
+		startup_fetch      = true,
+		shell_integration  = true,
+		shell_preset       = true,
+		clipboard_write    = true,
+		paste_protection   = true,
+		notify_after       = 10,
+		restore_session    = false,
+		quick_autohide     = true,
+		click_to_move      = true,
+		tab_bar            = "always",
+		ui_font            = "Noto Sans CJK JP, Noto Sans, Inter, Cantarell, DejaVu Sans, sans-serif",
+		ui_font_scale      = 0.9,
+		fetch_logo_size    = {30, 14},
 		fetch_logo_seconds = 30,
-		fetch_command    = "fastfetch",
+		fetch_command      = "fastfetch",
 	}
 	binds_defaults()
 }
@@ -128,7 +142,9 @@ config_file_mtime :: proc() -> time.Time {
 }
 
 col :: proc(v: string) -> (u32, bool) {
-	return parse_color_spec(v if strings.has_prefix(v, "#") || strings.has_prefix(v, "rgb:") else strings.concatenate({"#", v}, context.temp_allocator))
+	return parse_color_spec(
+		v if strings.has_prefix(v, "#") || strings.has_prefix(v, "rgb:") else strings.concatenate({"#", v}, context.temp_allocator),
+	)
 }
 
 set_col :: proc(dst: ^u32, v: string) -> bool {
@@ -149,30 +165,46 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 		k, v := strings.trim_space(l[:eq]), strings.trim_space(l[eq + 1:])
 		bad := false
 		switch k {
-		case "font-family": cfg.font_family = strings.clone(v)
+		case "font-family":
+			cfg.font_family = strings.clone(v)
 		case "font-size":
 			if f, ok := strconv.parse_f32(v); ok && f >= 4 && f <= 200 do cfg.font_size = f
 			else do bad = true
-		case "font-ligatures": cfg.ligatures = parse_bool(v)
-		case "foreground": bad = !set_col(&cfg.fg, v)
-		case "background": bad = !set_col(&cfg.bg, v)
-		case "cursor-color": bad = !set_col(&cfg.cursor, v)
-		case "selection-background": bad = !set_col(&cfg.selection_bg, v)
+		case "font-ligatures":
+			cfg.ligatures = parse_bool(v)
+		case "foreground":
+			bad = !set_col(&cfg.fg, v)
+		case "background":
+			bad = !set_col(&cfg.bg, v)
+		case "cursor-color":
+			bad = !set_col(&cfg.cursor, v)
+		case "selection-background":
+			bad = !set_col(&cfg.selection_bg, v)
 		case "selection-foreground":
 			if v == "none" do cfg.selection_fg = NO_COLOR
 			else do bad = !set_col(&cfg.selection_fg, v)
-		case "background-opacity-cells": cfg.opacity_cells = parse_bool(v)
-		case "background-opacity": if f, ok := strconv.parse_f32(v); ok do cfg.opacity = clamp(f, 0, 1)
-		case "scrollback-limit": if n, ok := strconv.parse_int(v); ok do cfg.scrollback = clamp(n, 0, 1_000_000)
-		case "command", "shell": cfg.shell = strings.clone(v)
-		case "window-padding": if n, ok := strconv.parse_int(v); ok do cfg.padding = clamp(n, 0, 200)
-		case "copy-on-select": cfg.copy_on_select = parse_bool(v)
+		case "background-opacity-cells":
+			cfg.opacity_cells = parse_bool(v)
+		case "background-opacity":
+			if f, ok := strconv.parse_f32(v); ok do cfg.opacity = clamp(f, 0, 1)
+		case "scrollback-limit":
+			if n, ok := strconv.parse_int(v); ok do cfg.scrollback = clamp(n, 0, 1_000_000)
+		case "command", "shell":
+			cfg.shell = strings.clone(v)
+		case "window-padding":
+			if n, ok := strconv.parse_int(v); ok do cfg.padding = clamp(n, 0, 200)
+		case "copy-on-select":
+			cfg.copy_on_select = parse_bool(v)
 		case "cursor-style":
 			switch v {
-			case "block": cfg.cursor_style = 2
-			case "underline": cfg.cursor_style = 4
-			case "bar": cfg.cursor_style = 6
-			case: bad = true
+			case "block":
+				cfg.cursor_style = 2
+			case "underline":
+				cfg.cursor_style = 4
+			case "bar":
+				cfg.cursor_style = 6
+			case:
+				bad = true
 			}
 		case "palette":
 			e := strings.index_byte(v, '=')
@@ -188,23 +220,40 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 			if ok do cfg.selection_fg = NO_COLOR // themes without selection-foreground keep the text color
 			if !ok {append(errs, fmt.tprintf("unknown theme %q", v)); continue}
 			config_apply_text(src, errs, false)
-		case "animation": cfg.animation = parse_bool(v)
-		case "cursor-blink": cfg.cursor_blink = parse_bool(v)
-		case "cursor-trail": cfg.cursor_trail = parse_bool(v)
-		case "smooth-scroll": cfg.smooth_scroll = parse_bool(v)
-		case "visual-bell": cfg.visual_bell = parse_bool(v)
-		case "custom-shader": cfg.custom_shader = strings.clone(v)
-		case "custom-shader-animation": cfg.shader_animation = parse_bool(v)
-		case "startup-fetch": cfg.startup_fetch = parse_bool(v)
-		case "shell-integration": cfg.shell_integration = parse_bool(v)
-		case "shell-preset": cfg.shell_preset = parse_bool(v)
-		case "clipboard-write": cfg.clipboard_write = v == "allow" || parse_bool(v)
-		case "clipboard-paste-protection": cfg.paste_protection = parse_bool(v)
-		case "restore-session": cfg.restore_session = parse_bool(v)
-		case "quick-terminal-autohide": cfg.quick_autohide = parse_bool(v)
-		case "cursor-click-to-move": cfg.click_to_move = parse_bool(v)
-		case "working-directory": cfg.working_dir = strings.clone(v)
-		case "ui-font": cfg.ui_font = strings.clone(v)
+		case "animation":
+			cfg.animation = parse_bool(v)
+		case "cursor-blink":
+			cfg.cursor_blink = parse_bool(v)
+		case "cursor-trail":
+			cfg.cursor_trail = parse_bool(v)
+		case "smooth-scroll":
+			cfg.smooth_scroll = parse_bool(v)
+		case "visual-bell":
+			cfg.visual_bell = parse_bool(v)
+		case "custom-shader":
+			cfg.custom_shader = strings.clone(v)
+		case "custom-shader-animation":
+			cfg.shader_animation = parse_bool(v)
+		case "startup-fetch":
+			cfg.startup_fetch = parse_bool(v)
+		case "shell-integration":
+			cfg.shell_integration = parse_bool(v)
+		case "shell-preset":
+			cfg.shell_preset = parse_bool(v)
+		case "clipboard-write":
+			cfg.clipboard_write = v == "allow" || parse_bool(v)
+		case "clipboard-paste-protection":
+			cfg.paste_protection = parse_bool(v)
+		case "restore-session":
+			cfg.restore_session = parse_bool(v)
+		case "quick-terminal-autohide":
+			cfg.quick_autohide = parse_bool(v)
+		case "cursor-click-to-move":
+			cfg.click_to_move = parse_bool(v)
+		case "working-directory":
+			cfg.working_dir = strings.clone(v)
+		case "ui-font":
+			cfg.ui_font = strings.clone(v)
 		case "ui-font-scale":
 			if f, ok := strconv.parse_f32(v); ok && f >= 0.5 && f <= 2 do cfg.ui_font_scale = f
 			else do bad = true
@@ -215,13 +264,19 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 			if v == "auto" || v == "gl" do cfg.renderer = ""
 			else if v == "gles" do cfg.renderer = "gles"
 			else do bad = true
-		case "fetch-logo": cfg.fetch_logo = strings.clone(v)
+		case "fetch-logo":
+			cfg.fetch_logo = strings.clone(v)
 		case "fetch-logo-size":
 			bad = true
 			if x := strings.index_any(v, "xX*"); x > 0 {
 				w, ok1 := strconv.parse_int(strings.trim_space(v[:x]))
 				h, ok2 := strconv.parse_int(strings.trim_space(v[x + 1:]))
-				if ok1 && ok2 && w >= 4 && h >= 2 && w <= 200 && h <= 100 {cfg.fetch_logo_size = {w, h}; bad = false}
+				if ok1 &&
+				   ok2 &&
+				   w >= 4 &&
+				   h >= 2 &&
+				   w <= 200 &&
+				   h <= 100 {cfg.fetch_logo_size = {w, h}; bad = false}
 			}
 		case "fetch-logo-animate-seconds":
 			if f, ok := strconv.parse_f64(v); ok && f >= 0 do cfg.fetch_logo_seconds = f
@@ -229,11 +284,13 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 		case "notify-on-command-finish-after":
 			if f, ok := strconv.parse_f64(v); ok && f >= 0 do cfg.notify_after = f
 			else do bad = true
-		case "fetch-command": cfg.fetch_command = strings.clone(v)
+		case "fetch-command":
+			cfg.fetch_command = strings.clone(v)
 		case "keybind":
 			if v == "clear" do clear(&cfg.binds)
 			else if !bind_add(v) do bad = true
-		case: append(errs, fmt.tprintf("unknown key %q", k)); continue
+		case:
+			append(errs, fmt.tprintf("unknown key %q", k)); continue
 		}
 		if bad do append(errs, fmt.tprintf("bad value for %s: %q", k, v))
 	}
@@ -250,16 +307,23 @@ config_load :: proc() -> []string {
 }
 
 theme_source :: proc(name: string) -> (string, bool) {
-	data, err := os.read_entire_file_from_path(fmt.tprintf("%s/themes/%s", config_dir(), name), context.temp_allocator)
+	data, err := os.read_entire_file_from_path(
+		fmt.tprintf("%s/themes/%s", config_dir(), name),
+		context.temp_allocator,
+	)
 	if err == nil do return string(data), true
 	for th in BUILTIN_THEMES do if th.name == name do return th.src, true
 	return "", false
 }
 
-Theme :: struct {name, src: string}
+Theme :: struct {
+	name, src: string,
+}
 
 BUILTIN_THEMES := [?]Theme {
-	{"kuraokami", `background = #060913
+	{
+		"kuraokami",
+		`background = #060913
 foreground = #cdd6f4
 cursor-color = #cdd6f4
 selection-background = #89b4fa
@@ -279,8 +343,11 @@ palette = 11=#f9e2af
 palette = 12=#89b4fa
 palette = 13=#f5c2e7
 palette = 14=#94e2d5
-palette = 15=#a6adc8`},
-	{"tokyonight", `background = #1a1b26
+palette = 15=#a6adc8`,
+	},
+	{
+		"tokyonight",
+		`background = #1a1b26
 foreground = #c0caf5
 cursor-color = #c0caf5
 selection-background = #283457
@@ -299,8 +366,11 @@ palette = 11=#e0af68
 palette = 12=#7aa2f7
 palette = 13=#bb9af7
 palette = 14=#7dcfff
-palette = 15=#c0caf5`},
-	{"catppuccin-mocha", `background = #1e1e2e
+palette = 15=#c0caf5`,
+	},
+	{
+		"catppuccin-mocha",
+		`background = #1e1e2e
 foreground = #cdd6f4
 cursor-color = #f5e0dc
 selection-background = #585b70
@@ -319,8 +389,11 @@ palette = 11=#f9e2af
 palette = 12=#89b4fa
 palette = 13=#f5c2e7
 palette = 14=#94e2d5
-palette = 15=#a6adc8`},
-	{"dracula", `background = #282a36
+palette = 15=#a6adc8`,
+	},
+	{
+		"dracula",
+		`background = #282a36
 foreground = #f8f8f2
 cursor-color = #f8f8f2
 selection-background = #44475a
@@ -339,8 +412,11 @@ palette = 11=#ffffa5
 palette = 12=#d6acff
 palette = 13=#ff92df
 palette = 14=#a4ffff
-palette = 15=#ffffff`},
-	{"gruvbox-dark", `background = #282828
+palette = 15=#ffffff`,
+	},
+	{
+		"gruvbox-dark",
+		`background = #282828
 foreground = #ebdbb2
 cursor-color = #ebdbb2
 selection-background = #504945
@@ -359,8 +435,11 @@ palette = 11=#fabd2f
 palette = 12=#83a598
 palette = 13=#d3869b
 palette = 14=#8ec07c
-palette = 15=#ebdbb2`},
-	{"nord", `background = #2e3440
+palette = 15=#ebdbb2`,
+	},
+	{
+		"nord",
+		`background = #2e3440
 foreground = #d8dee9
 cursor-color = #d8dee9
 selection-background = #434c5e
@@ -379,8 +458,11 @@ palette = 11=#ebcb8b
 palette = 12=#81a1c1
 palette = 13=#b48ead
 palette = 14=#8fbcbb
-palette = 15=#eceff4`},
-	{"solarized-dark", `background = #002b36
+palette = 15=#eceff4`,
+	},
+	{
+		"solarized-dark",
+		`background = #002b36
 foreground = #839496
 cursor-color = #93a1a1
 selection-background = #073642
@@ -399,5 +481,6 @@ palette = 11=#657b83
 palette = 12=#839496
 palette = 13=#6c71c4
 palette = 14=#93a1a1
-palette = 15=#fdf6e3`},
+palette = 15=#fdf6e3`,
+	},
 }

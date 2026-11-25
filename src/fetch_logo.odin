@@ -25,7 +25,9 @@ import "core:thread"
 
 
 LOGO_ASCII := [?][2]string {
-	{"kuraokami", `$1          ▁▂▃▄▅▆▇
+	{
+		"kuraokami",
+		`$1          ▁▂▃▄▅▆▇
 $1      ▗▄▀▀       ▀▄▖   $2◆
 $1    ▗▀   $2╱╲$1         ▀▖
 $1   ▐    $2╱  ╲$1         ▌
@@ -33,8 +35,11 @@ $1   ▐   $2╱ >_ ╲$1        ▌
 $1   ▝▖  $2╲    ╱$1      ▗▘
 $1     ▀▄ $2╲  ╱$1     ▄▀
 $1       ▀▄$2╲╱$1  ▄▄▀▘
-$1  ~≈≈~   ▀▀▀▀▘  ~≈≈~`},
-	{"crystal", `$2       ▲
+$1  ~≈≈~   ▀▀▀▀▘  ~≈≈~`,
+	},
+	{
+		"crystal",
+		`$2       ▲
 $2      ╱$1█$2╲
 $2     ╱$1██$2 ╲
 $2    ╱$1███$2  ╲
@@ -43,7 +48,8 @@ $1   █ $2>_$1    █
 $1   █       █
 $1   ◥◣     ◢◤
 $1     ◥◣ ◢◤
-$1       ▼`},
+$1       ▼`,
+	},
 }
 
 ANIM_EXT := [?]string{".gif", ".webp", ".apng", ".mp4", ".webm", ".mkv", ".mov", ".avi", ".m4v"}
@@ -95,14 +101,24 @@ fetch_logo_args :: proc() -> string {
 	if v == "none" do return " --logo none"
 	cols, rows := cfg.fetch_logo_size[0], cfg.fetch_logo_size[1]
 	image_args :: proc(png: string, cols, rows: int) -> string {
-		return fmt.tprintf(" --logo %s --logo-type kitty-direct --logo-width %d --logo-height %d", shell_quote(png), cols, rows)
+		return fmt.tprintf(
+			" --logo %s --logo-type kitty-direct --logo-width %d --logo-height %d",
+			shell_quote(png),
+			cols,
+			rows,
+		)
 	}
 	for a in LOGO_ASCII {
 		if a[0] != v do continue
 		path := fmt.tprintf("%s/logo-%s.txt", cache_dir(), a[0])
 		_ = os.make_directory_all(cache_dir())
 		_ = os.write_entire_file(path, transmute([]u8)a[1])
-		return fmt.tprintf(" --logo %s --logo-type file --logo-color-1 %s --logo-color-2 %s", shell_quote(path), "magenta", "cyan")
+		return fmt.tprintf(
+			" --logo %s --logo-type file --logo-color-1 %s --logo-color-2 %s",
+			shell_quote(path),
+			"magenta",
+			"cyan",
+		)
 	}
 	if !strings.contains_rune(v, '/') && !strings.has_prefix(v, "~") {
 		// A fastfetch built-in logo name: only harmless characters reach the shell.
@@ -187,33 +203,82 @@ anim_start :: proc(src: string, cols, rows: int) -> string {
 	h := min(rows * max(fonts.cell_h, 1), LOGO_MAX_PX)
 	w, h = w &~ 1, h &~ 1
 	filter :: proc(w, h: int, fps: bool) -> string {
-		f := fmt.tprintf("scale=%d:%d:force_original_aspect_ratio=decrease,format=rgba,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black@0", w, h, w, h)
+		f := fmt.tprintf(
+			"scale=%d:%d:force_original_aspect_ratio=decrease,format=rgba,pad=%d:%d:(ow-iw)/2:(oh-ih)/2:color=black@0",
+			w,
+			h,
+			w,
+			h,
+		)
 		return fmt.tprintf("fps=%d,%s", LOGO_FPS, f) if fps else f
 	}
-	first, ok := run_capture({"ffmpeg", "-v", "error", "-i", src, "-frames:v", "1", "-vf", filter(w, h, false), "-f", "rawvideo", "-pix_fmt", "rgba", "-"}, w * h * 4 + 1)
+	first, ok := run_capture(
+		{
+			"ffmpeg",
+			"-v",
+			"error",
+			"-i",
+			src,
+			"-frames:v",
+			"1",
+			"-vf",
+			filter(w, h, false),
+			"-f",
+			"rawvideo",
+			"-pix_fmt",
+			"rgba",
+			"-",
+		},
+		w * h * 4 + 1,
+	)
 	if !ok || len(first) != w * h * 4 do return ""
 	defer delete(first)
 	png := cache_png_path(src)
 	if os.write_entire_file(png, png_encode(first, w, h, 4)) != nil do return ""
 	logo_anim.png = strings.clone(png)
 	logo_anim.w, logo_anim.h, logo_anim.fps = w, h, LOGO_FPS
-	Job :: struct {src, vf: string, w, h: int}
+	Job :: struct {
+		src, vf: string,
+		w, h:    int,
+	}
 	job := new(Job)
 	job^ = {strings.clone(src), strings.clone(filter(w, h, true)), w, h}
-	thread.create_and_start_with_poly_data(job, proc(job: ^Job) {
-		defer {delete(job.src); delete(job.vf); free(job)}
-		size := job.w * job.h * 4
-		raw, ok := run_capture({"ffmpeg", "-v", "error", "-t", fmt.tprint(LOGO_MAX_SECONDS), "-i", job.src, "-vf", job.vf, "-f", "rawvideo", "-pix_fmt", "rgba", "-"}, size * LOGO_FPS * LOGO_MAX_SECONDS + 1)
-		if !ok || len(raw) < size * 2 do return // a single frame: nothing to animate
-		n := len(raw) / size
-		frames := make([][]u8, n)
-		for i in 0 ..< n do frames[i] = raw[i * size:(i + 1) * size]
-		sync.mutex_lock(&logo_anim.mu)
-		logo_anim.frames = frames
-		logo_anim.ready = true
-		sync.mutex_unlock(&logo_anim.mu)
-		push_wake()
-	}, self_cleanup = true)
+	thread.create_and_start_with_poly_data(
+		job,
+		proc(job: ^Job) {
+			defer {delete(job.src); delete(job.vf); free(job)}
+			size := job.w * job.h * 4
+			raw, ok := run_capture(
+				{
+					"ffmpeg",
+					"-v",
+					"error",
+					"-t",
+					fmt.tprint(LOGO_MAX_SECONDS),
+					"-i",
+					job.src,
+					"-vf",
+					job.vf,
+					"-f",
+					"rawvideo",
+					"-pix_fmt",
+					"rgba",
+					"-",
+				},
+				size * LOGO_FPS * LOGO_MAX_SECONDS + 1,
+			)
+			if !ok || len(raw) < size * 2 do return // a single frame: nothing to animate
+			n := len(raw) / size
+			frames := make([][]u8, n)
+			for i in 0 ..< n do frames[i] = raw[i * size:(i + 1) * size]
+			sync.mutex_lock(&logo_anim.mu)
+			logo_anim.frames = frames
+			logo_anim.ready = true
+			sync.mutex_unlock(&logo_anim.mu)
+			push_wake()
+		},
+		self_cleanup = true,
+	)
 	return png
 }
 
@@ -225,22 +290,25 @@ logo_anim_tick :: proc() -> i32 {
 		a.stopped = true // power: stop after the configured time, keep the current frame
 		return -1
 	}
-	Find :: struct {t: ^Term, img: ^Image}
+	Find :: struct {
+		t:   ^Term,
+		img: ^Image,
+	}
 	f := Find{}
 	for_leaves(current_tab().root, proc(n: ^Node, data: rawptr) {
-		f := (^Find)(data)
-		if f.img != nil do return
-		t := n.term
-		sync.mutex_lock(&t.mu)
-		defer sync.mutex_unlock(&t.mu)
-		top := view_abs(t, 0)
-		for _, img in t.gfx.images {
-			if img.src != logo_anim.png || img.w != logo_anim.w || img.h != logo_anim.h do continue
-			for p in t.gfx.placements {
-				if p.img == img.id && p.abs_row + i64(p.rows) > top && p.abs_row < top + i64(t.rows) {f.t, f.img = t, img; return}
+			f := (^Find)(data)
+			if f.img != nil do return
+			t := n.term
+			sync.mutex_lock(&t.mu)
+			defer sync.mutex_unlock(&t.mu)
+			top := view_abs(t, 0)
+			for _, img in t.gfx.images {
+				if img.src != logo_anim.png || img.w != logo_anim.w || img.h != logo_anim.h do continue
+				for p in t.gfx.placements {
+					if p.img == img.id && p.abs_row + i64(p.rows) > top && p.abs_row < top + i64(t.rows) {f.t, f.img = t, img; return}
+				}
 			}
-		}
-	}, &f)
+		}, &f)
 	if f.img == nil do return -1 // not on screen: nothing to do (and no wakeups)
 	if a.start == 0 do a.start = app.now
 	total := int((app.now - a.start) * a.fps)

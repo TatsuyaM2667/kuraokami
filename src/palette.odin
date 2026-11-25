@@ -9,7 +9,11 @@ import sdl "vendor:sdl3"
 
 // Command palette (Ctrl+Shift+P): fuzzy-search every action, tab, theme and shader.
 
-Palette_Kind :: enum u8 {Action, Theme, Shader}
+Palette_Kind :: enum u8 {
+	Action,
+	Theme,
+	Shader,
+}
 
 Palette_Item :: struct {
 	label:  string,
@@ -66,7 +70,15 @@ palette_items :: proc() -> []Palette_Item {
 		append(&items, Palette_Item{label = ACTION_LABELS[a], kind = .Action, action = a})
 	}
 	for tab, i in app.tabs {
-		append(&items, Palette_Item{label = fmt.tprintf("タブ %d へ: %s", i + 1, tab_title(tab)), kind = .Action, action = .Goto_Tab, arg = i + 1})
+		append(
+			&items,
+			Palette_Item {
+				label = fmt.tprintf("タブ %d へ: %s", i + 1, tab_title(tab)),
+				kind = .Action,
+				action = .Goto_Tab,
+				arg = i + 1,
+			},
+		)
 	}
 	for th in BUILTIN_THEMES do append(&items, Palette_Item{label = fmt.tprintf("テーマ: %s", th.name), kind = .Theme, name = th.name})
 	for sh in BUILTIN_SHADERS do append(&items, Palette_Item{label = fmt.tprintf("シェーダー: %s", sh.name), kind = .Shader, name = fmt.tprintf("builtin:%s", sh.name)})
@@ -116,12 +128,12 @@ palette_open :: proc() {
 
 refresh_term_colors :: proc() {
 	for tab in app.tabs do for_leaves(tab.root, proc(n: ^Node, _: rawptr) {
-		t := n.term
-		sync.mutex_lock(&t.mu)
-		palette_reset(t)
-		t.dirty = true
-		sync.mutex_unlock(&t.mu)
-	}, nil)
+			t := n.term
+			sync.mutex_lock(&t.mu)
+			palette_reset(t)
+			t.dirty = true
+			sync.mutex_unlock(&t.mu)
+		}, nil)
 	app.redraw = true
 }
 
@@ -136,7 +148,13 @@ palette_run :: proc(it: Palette_Item) {
 		errs := make([dynamic]string, context.temp_allocator)
 		config_apply_text(fmt.tprintf("theme = %s", it.name), &errs)
 		refresh_term_colors()
-		show_toast(fmt.tprintf("テーマ %s を適用しました(残すには設定に theme = %s)", it.name, it.name))
+		show_toast(
+			fmt.tprintf(
+				"テーマ %s を適用しました(残すには設定に theme = %s)",
+				it.name,
+				it.name,
+			),
+		)
 	case .Shader:
 		cfg.custom_shader = strings.clone(it.name)
 		if e := post_shader_load(cfg.custom_shader); e != "" do show_toast(e)
@@ -174,13 +192,21 @@ palette_draw :: proc(w, h: int) {
 	if cols < 10 do return
 	bw := f32(cols * cw)
 	x := (f32(w) - bw) / 2
-	slide := f32(0) if !cfg.animation else (1 - ease_out((app.now - app.palette_time) / 0.18)) * f32(ch)
+	slide :=
+		f32(0) if !cfg.animation else (1 - ease_out((app.now - app.palette_time) / 0.18)) * f32(ch)
 	y := f32(h) * 0.14 - slide
 	shown := min(len(items), 12)
 	box_bg := mix(cfg.bg, cfg.fg, 0.08)
 	quad(&ren.ov, x - 8, y - 8, x + bw + 8, y + f32((shown + 1) * ch) + 16, rgba(box_bg, 245))
 	query := utf8.runes_to_string(app.palette_text[:], context.temp_allocator)
-	draw_text(&ren.ov, x, y, truncate_cells(fmt.tprintf("❯ %s%s▏", query, app.preedit), cols), cfg.fg, box_bg)
+	draw_text(
+		&ren.ov,
+		x,
+		y,
+		truncate_cells(fmt.tprintf("❯ %s%s▏", query, app.preedit), cols),
+		cfg.fg,
+		box_bg,
+	)
 	y += f32(ch) + 8
 	// Keep the selection visible when it is beyond the first page.
 	first := max(0, app.palette_sel - shown + 1)

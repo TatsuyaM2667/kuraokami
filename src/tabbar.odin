@@ -14,8 +14,10 @@ Tab_Hit :: struct {
 
 tabbar_visible :: proc() -> bool {
 	switch cfg.tab_bar {
-	case "never": return false
-	case "auto": return len(app.tabs) > 1
+	case "never":
+		return false
+	case "auto":
+		return len(app.tabs) > 1
 	}
 	return true
 }
@@ -97,7 +99,13 @@ draw_tabbar :: proc(w: int) {
 			cy := top + (H - top) / 2
 			cr := ch * 0.42
 			if hover && app.tab_hover.close do rounded_rect(&ren.ov, cx - cr, cy - cr, cx + cr, cy + cr, cr, alpha(cfg.palette[1], 0.45))
-			draw_ui_text(&ren.ov, cx - ui_advance('×') / 2, cy - uh / 2, "×", alpha(fgc, 0.9 if hover && app.tab_hover.close else 0.6))
+			draw_ui_text(
+				&ren.ov,
+				cx - ui_advance('×') / 2,
+				cy - uh / 2,
+				"×",
+				alpha(fgc, 0.9 if hover && app.tab_hover.close else 0.6),
+			)
 		}
 	}
 	// + button: a round hover highlight.
@@ -105,9 +113,16 @@ draw_tabbar :: proc(w: int) {
 	py := top + (H - top) / 2
 	pr := ch * 0.45
 	if app.tab_hover.plus do rounded_rect(&ren.ov, px - pr, py - pr, px + pr, py + pr, pr, alpha(fgc, 0.12))
-	draw_ui_text(&ren.ov, px - ui_advance('+') / 2, py - uh / 2, "+", alpha(fgc, 0.9 if app.tab_hover.plus else 0.55))
+	draw_ui_text(
+		&ren.ov,
+		px - ui_advance('+') / 2,
+		py - uh / 2,
+		"+",
+		alpha(fgc, 0.9 if app.tab_hover.plus else 0.55),
+	)
 	// Sliding accent underline with a soft glow under the active tab.
-	p := ease_out((app.now - app.tab_anim_start) / 0.25) if app.tab_prev >= 0 && cfg.animation else 1
+	p :=
+		ease_out((app.now - app.tab_anim_start) / 0.25) if app.tab_prev >= 0 && cfg.animation else 1
 	from := f32(app.tab_prev if app.tab_prev >= 0 && app.tab_prev < n else app.cur)
 	ux := (from + (f32(app.cur) - from) * p) * tw
 	inset := tw * 0.18
@@ -123,11 +138,13 @@ tabbar_button :: proc(e: sdl.MouseButtonEvent, px, w: int) -> bool {
 		return true
 	}
 	switch {
-	case hit.plus && e.button == 1: new_tab()
+	case hit.plus && e.button == 1:
+		new_tab()
 	case hit.index < 0:
 		if e.button == 1 && e.clicks == 2 do new_tab() // double-click empty space: new tab
 	case hit.index >= len(app.tabs):
-	case e.button == 2 || (e.button == 1 && hit.close): close_tab(hit.index)
+	case e.button == 2 || (e.button == 1 && hit.close):
+		close_tab(hit.index)
 	case e.button == 1:
 		switch_tab(hit.index)
 		app.tab_drag = hit.index

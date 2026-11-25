@@ -1,10 +1,11 @@
 #+build windows
 package kuraokami
 
-import "core:strings"
-import "core:unicode/utf16"
 import "core:os"
+import "core:strings"
+import "core:fmt"
 import win "core:sys/windows"
+import "core:unicode/utf16"
 
 // ConPTY entry points (not in core:sys/windows).
 HPCON :: distinct rawptr
@@ -26,12 +27,12 @@ STARTUPINFOEXW :: struct {
 }
 
 Pty :: struct {
-	hpc:      HPCON,
-	in_w:     win.HANDLE, // we write keystrokes here
-	out_r:    win.HANDLE, // we read output here
-	process:  win.HANDLE,
-	pid:      i32,
-	attrs:    []u8,
+	hpc:     HPCON,
+	in_w:    win.HANDLE, // we write keystrokes here
+	out_r:   win.HANDLE, // we read output here
+	process: win.HANDLE,
+	pid:     i32,
+	attrs:   []u8,
 }
 
 platform_init :: proc() {}
@@ -71,7 +72,14 @@ pty_spawn :: proc(t: ^Term, cwd: string, argv: []string, env: [][2]string = nil)
 	dir := wide(cwd) if cwd != "" else nil
 	if !win.CreateProcessW(nil, wide(cmd), nil, nil, false, win.EXTENDED_STARTUPINFO_PRESENT, nil, dir, &si.StartupInfo, &pi) do return false
 	win.CloseHandle(pi.hThread)
-	t.pty = Pty{hpc = hpc, in_w = in_w, out_r = out_r, process = pi.hProcess, pid = i32(pi.dwProcessId), attrs = attrs}
+	t.pty = Pty {
+		hpc     = hpc,
+		in_w    = in_w,
+		out_r   = out_r,
+		process = pi.hProcess,
+		pid     = i32(pi.dwProcessId),
+		attrs   = attrs,
+	}
 	return true
 }
 
@@ -108,10 +116,17 @@ pty_cwd :: proc(t: ^Term) -> string {return ""}
 
 spawn_detached :: proc(args: []string) {
 	if len(args) == 0 do return
-	win.ShellExecuteW(nil, wide("open"), wide(args[0]), wide(strings.join(args[1:], " ", context.temp_allocator)) if len(args) > 1 else nil, nil, win.SW_SHOWNORMAL)
+	win.ShellExecuteW(
+		nil,
+		wide("open"),
+		wide(args[0]),
+		wide(strings.join(args[1:], " ", context.temp_allocator)) if len(args) > 1 else nil,
+		nil,
+		win.SW_SHOWNORMAL,
+	)
 }
 
-notify :: proc(title, body: string) {} // shortcut: no toast notifications on Windows; needs WinRT
+notify :: proc(title, body: string) {} 	// shortcut: no toast notifications on Windows; needs WinRT
 
 shm_read :: proc(name: string, size: int) -> ([]u8, bool) {return nil, false}
 
@@ -124,3 +139,8 @@ quick_cleanup :: proc() {}
 
 // shortcut: no helper-process capture on Windows yet; animated fetch logos need it (ffmpeg).
 run_capture :: proc(args: []string, limit: int) -> ([]u8, bool) {return nil, false}
+
+exec_shell :: proc(args: []string, env: [][2]string) {
+	fmt.eprintln("kuraokami --shell is not supported on Windows yet")
+	os.exit(1)
+}

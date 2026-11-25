@@ -1,14 +1,14 @@
 package kuraokami
 
-import "core:strings"
 import "core:bytes"
 import "core:compress/zlib"
-import "core:image/png"
-import "core:strconv"
+import "core:encoding/base64"
 import "core:fmt"
+import "core:image/png"
 import "core:os"
 import "core:path/filepath"
-import "core:encoding/base64"
+import "core:strconv"
+import "core:strings"
 
 Image :: struct {
 	id:      u32,
@@ -21,12 +21,12 @@ Image :: struct {
 }
 
 Placement :: struct {
-	img:      u32,
-	pid:      u32,
-	abs_row:  i64,
-	col:      int,
+	img:        u32,
+	pid:        u32,
+	abs_row:    i64,
+	col:        int,
 	cols, rows: int,
-	z:        i32,
+	z:          i32,
 }
 
 Kitty_Ctrl :: struct {
@@ -99,23 +99,40 @@ parse_kitty_ctrl :: proc(s: string, k: ^Kitty_Ctrl) {
 		n, _ := strconv.parse_int(val)
 		n = clamp(n, -(1 << 30), 1 << 30) // untrusted: keep products below int overflow
 		switch kv[0] {
-		case 'a': k.a = val[0]
-		case 't': k.t = val[0]
-		case 'o': k.o = val[0]
-		case 'd': k.d = val[0]
-		case 'f': k.f = n
-		case 's': k.s = n
-		case 'v': k.v = n
-		case 'i': k.i = u32(n)
-		case 'p': k.p = u32(n)
-		case 'c': k.c = n
-		case 'r': k.r = n
-		case 'm': k.m = n
-		case 'q': k.q = n
-		case 'C': k.C = n
-		case 'z': k.z = i32(n)
-		case 'S': k.S = n
-		case 'O': k.O = n
+		case 'a':
+			k.a = val[0]
+		case 't':
+			k.t = val[0]
+		case 'o':
+			k.o = val[0]
+		case 'd':
+			k.d = val[0]
+		case 'f':
+			k.f = n
+		case 's':
+			k.s = n
+		case 'v':
+			k.v = n
+		case 'i':
+			k.i = u32(n)
+		case 'p':
+			k.p = u32(n)
+		case 'c':
+			k.c = n
+		case 'r':
+			k.r = n
+		case 'm':
+			k.m = n
+		case 'q':
+			k.q = n
+		case 'C':
+			k.C = n
+		case 'z':
+			k.z = i32(n)
+		case 'S':
+			k.S = n
+		case 'O':
+			k.O = n
 		}
 	}
 }
@@ -145,7 +162,11 @@ kitty_command :: proc(t: ^Term, s: []u8) {
 		clear(&g.pending)
 		return
 	}
-	k := Kitty_Ctrl{a = 't', t = 'd', f = 32}
+	k := Kitty_Ctrl {
+		a = 't',
+		t = 'd',
+		f = 32,
+	}
 	parse_kitty_ctrl(ctrl_s, &k)
 	if k.m == 1 {
 		g.chunking = true
@@ -186,7 +207,8 @@ kitty_load :: proc(t: ^Term, k: ^Kitty_Ctrl, b64: []u8) -> (pixels: []u8, w, h: 
 	}
 	if k.o == 'z' {
 		buf: bytes.Buffer
-		if zlib.inflate(data, &buf) != nil {bytes.buffer_destroy(&buf); return nil, 0, 0, "EINVAL:zlib"}
+		if zlib.inflate(data, &buf) !=
+		   nil {bytes.buffer_destroy(&buf); return nil, 0, 0, "EINVAL:zlib"}
 		inflated := bytes.buffer_to_bytes(&buf)
 		if owned != nil do delete(owned)
 		owned = inflated
@@ -201,7 +223,7 @@ kitty_load :: proc(t: ^Term, k: ^Kitty_Ctrl, b64: []u8) -> (pixels: []u8, w, h: 
 		n := img.width * img.height
 		if img.channels != 4 || len(src) < n * 4 * (img.depth / 8) do return nil, 0, 0, "EBADPNG:format"
 		out := make([]u8, n * 4)
-		if img.depth == 16 { // keep the high byte of each big-endian 16-bit sample
+		if img.depth == 16 { 	// keep the high byte of each big-endian 16-bit sample
 			for i in 0 ..< n * 4 do out[i] = src[i * 2 + 1] if ODIN_ENDIAN == .Little else src[i * 2]
 		} else do copy(out, src[:n * 4])
 		return out, img.width, img.height, ""
@@ -256,7 +278,15 @@ kitty_place :: proc(t: ^Term, k: ^Kitty_Ctrl, img: ^Image) {
 		rows = max(1, (cols * cw * img.h / max(img.w, 1) + ch - 1) / ch)
 	}
 	cols, rows = clamp(cols, 1, MAX_PLACE_CELLS), clamp(rows, 1, MAX_PLACE_CELLS)
-	p := Placement{img = img.id, pid = k.p, abs_row = cursor_abs(t), col = t.cx, cols = cols, rows = rows, z = k.z}
+	p := Placement {
+		img     = img.id,
+		pid     = k.p,
+		abs_row = cursor_abs(t),
+		col     = t.cx,
+		cols    = cols,
+		rows    = rows,
+		z       = k.z,
+	}
 	replaced := false
 	for &e in g.placements {
 		if e.img == img.id && e.pid == k.p {e = p; replaced = true; break}
@@ -292,7 +322,8 @@ kitty_execute :: proc(t: ^Term, k: ^Kitty_Ctrl, payload: []u8) {
 		}
 		img.pixels, img.w, img.h = px, w, h
 		if k.t == 'f' {
-			if raw, e := base64.decode(string(payload), allocator = context.temp_allocator); e == nil {
+			if raw, e := base64.decode(string(payload), allocator = context.temp_allocator);
+			   e == nil {
 				p, _ := filepath.clean(string(raw), context.temp_allocator)
 				delete(img.src)
 				img.src = strings.clone(p)
@@ -315,12 +346,19 @@ kitty_execute :: proc(t: ^Term, k: ^Kitty_Ctrl, payload: []u8) {
 			p := g.placements[i]
 			hit := false
 			switch d {
-			case 'a', 'A': hit = true
-			case 'i', 'I': hit = p.img == k.i && (k.p == 0 || p.pid == k.p)
-			case 'z', 'Z': hit = p.z == k.z
+			case 'a', 'A':
+				hit = true
+			case 'i', 'I':
+				hit = p.img == k.i && (k.p == 0 || p.pid == k.p)
+			case 'z', 'Z':
+				hit = p.z == k.z
 			case 'c', 'C':
 				abs := cursor_abs(t)
-				hit = abs >= p.abs_row && abs < p.abs_row + i64(p.rows) && t.cx >= p.col && t.cx < p.col + p.cols
+				hit =
+					abs >= p.abs_row &&
+					abs < p.abs_row + i64(p.rows) &&
+					t.cx >= p.col &&
+					t.cx < p.col + p.cols
 			}
 			if hit do unordered_remove(&g.placements, i)
 		}
@@ -350,8 +388,24 @@ gfx_evict :: proc(g: ^Graphics) {
 
 sixel_decode :: proc(t: ^Term, s: []u8) {
 	pal: [256]u32
-	vt340 := [16]u32{0x000000, 0x3333cc, 0xcc2121, 0x33cc33, 0xcc33cc, 0x33cccc, 0xcccc33, 0x878787,
-		0x424242, 0x545499, 0x994242, 0x549954, 0x995499, 0x549999, 0x999954, 0xcccccc}
+	vt340 := [16]u32 {
+		0x000000,
+		0x3333cc,
+		0xcc2121,
+		0x33cc33,
+		0xcc33cc,
+		0x33cccc,
+		0xcccc33,
+		0x878787,
+		0x424242,
+		0x545499,
+		0x994242,
+		0x549954,
+		0x995499,
+		0x549999,
+		0x999954,
+		0xcccccc,
+	}
 	for i in 0 ..< 16 do pal[i] = vt340[i]
 	for i in 16 ..< 256 do pal[i] = 0x808080
 	W, H := 0, 0
@@ -372,7 +426,9 @@ sixel_decode :: proc(t: ^Term, s: []u8) {
 	i := 0
 	read_num :: proc(s: []u8, i: ^int) -> int {
 		n := 0
-		for i^ < len(s) && s[i^] >= '0' && s[i^] <= '9' {n = min(n * 10 + int(s[i^] - '0'), 100000); i^ += 1}
+		for i^ < len(s) &&
+		    s[i^] >= '0' &&
+		    s[i^] <= '9' {n = min(n * 10 + int(s[i^] - '0'), 100000); i^ += 1}
 		return n
 	}
 	color = pal[0]
@@ -395,7 +451,8 @@ sixel_decode :: proc(t: ^Term, s: []u8) {
 				bb := read_num(s, &i); i += 1
 				c := read_num(s, &i)
 				if kind == 2 {
-					pal[n] = u32(a * 255 / 100) << 16 | u32(bb * 255 / 100) << 8 | u32(c * 255 / 100)
+					pal[n] =
+						u32(a * 255 / 100) << 16 | u32(bb * 255 / 100) << 8 | u32(c * 255 / 100)
 				} else if kind == 1 {
 					pal[n] = hls_to_rgb(a, bb, c)
 				}
@@ -411,8 +468,10 @@ sixel_decode :: proc(t: ^Term, s: []u8) {
 					x += n
 				}
 			}
-		case '$': x = 0
-		case '-': x = 0; y += 6
+		case '$':
+			x = 0
+		case '-':
+			x = 0; y += 6
 		case '?' ..= '~':
 			sixel_put(&px, &W, &H, x, y, int(b - '?'), 1, color, ensure)
 			x += 1
@@ -438,14 +497,22 @@ sixel_decode :: proc(t: ^Term, s: []u8) {
 	img.version = 1
 	g.images[img.id] = img
 	g.bytes += len(out)
-	k := Kitty_Ctrl{C = 1}
+	k := Kitty_Ctrl {
+		C = 1,
+	}
 	kitty_place(t, &k, img)
 	rows := (h + max(t.cell_h, 1) - 1) / max(t.cell_h, 1)
 	for _ in 0 ..< rows do linefeed(t)
 	gfx_evict(g)
 }
 
-sixel_put :: proc(px: ^[dynamic]u32, W, H: ^int, x, y, bits, n: int, color: u32, ensure: proc(^[dynamic]u32, ^int, ^int, int, int)) {
+sixel_put :: proc(
+	px: ^[dynamic]u32,
+	W, H: ^int,
+	x, y, bits, n: int,
+	color: u32,
+	ensure: proc(_: ^[dynamic]u32, _: ^int, _: ^int, _: int, _: int),
+) {
 	if bits == 0 do return
 	if x + n > 8192 || y + 6 > 8192 do return
 	ensure(px, W, H, x + n, y + 6)

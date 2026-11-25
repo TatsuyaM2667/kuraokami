@@ -27,6 +27,7 @@
 - [キーバインド](#キーバインド)
 - [設定](#設定)
 - [クイックターミナル](#クイックターミナル)
+- [Zed などほかのエディタで使う](#zed-などほかのエディタで使う)
 - [シェル統合と zsh プリセット](#シェル統合と-zsh-プリセット)
 - [fastfetch のロゴ](#fastfetch-のロゴ)
 - [アニメーションとカスタムシェーダー](#アニメーションとカスタムシェーダー)
@@ -269,6 +270,41 @@ keybind = clear                      # 既定のバインドを全部消す
 `scroll_page_up` `scroll_page_down` `scroll_top` `scroll_bottom` `prompt_prev` `prompt_next`
 `font_inc` `font_dec` `font_reset` `open_config` `reload_config` `search` `clear_scrollback`
 `toggle_fullscreen` `command_palette` `unbind`
+
+## Zed などほかのエディタで使う
+
+エディタ内蔵のターミナルは各エディタ自身が描画するため、描画部分を差し替えることはできません。
+その代わり、kuraokami のシェル統合（プロンプト・入力候補・略語・`j`・fastfetch）をそのまま持ち込めます。
+
+- `kuraokami --shell` … 窓を開かずに、kuraokami の統合付きでシェルを起動（画像・動画のロゴは自動で外れます）
+- `kuraokami --working-directory DIR` … 指定したフォルダで kuraokami の窓を開く
+
+**Zed のターミナルパネル**（`settings.json`）:
+
+```jsonc
+"terminal": {
+  "shell": {
+    "with_arguments": {
+      "program": "/app/bin/host-spawn",   // Flatpak 版 Zed。通常版なら "program" に kuraokami を直接指定
+      "args": ["sh", "-c", "exec \"$HOME/.local/bin/kuraokami\" --shell"]
+    }
+  }
+}
+```
+
+**Zed からプロジェクトのフォルダで kuraokami の窓を開く**（`tasks.json` と `keymap.json`）:
+
+```jsonc
+// tasks.json
+[{
+  "label": "kuraokami: ここで開く",
+  "command": "/app/bin/host-spawn",
+  "args": ["sh", "-c", "exec \"$HOME/.local/bin/kuraokami\" --working-directory \"$1\"", "kuraokami", "$ZED_WORKTREE_ROOT"],
+  "allow_concurrent_runs": true, "reveal": "never", "hide": "always"
+}]
+// keymap.json
+[{ "context": "Workspace", "bindings": { "ctrl-alt-t": ["task::Spawn", { "task_name": "kuraokami: ここで開く" }] } }]
+```
 
 ## クイックターミナル
 
