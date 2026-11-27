@@ -1,13 +1,13 @@
 package kuraokami
 
-import "core:strings"
-import "core:strconv"
-import "core:sync"
+import "core:encoding/base64"
 import "core:fmt"
+import "core:strconv"
+import "core:strings"
+import "core:sync"
+import "core:time"
 import "core:unicode"
 import "core:unicode/utf8"
-import "core:encoding/base64"
-import "core:time"
 
 // Color encoding: bit 31 = palette index (low byte), bit 30 = default (0 fg, 1 bg), else 0xRRGGBB.
 PAL :: u32(1 << 31)
@@ -18,18 +18,31 @@ DEF_BG :: DEF | 1
 // Cell.ch values >= CLUSTER_BASE index Term.clusters (grapheme clusters: combining marks, ZWJ emoji, flags).
 CLUSTER_BASE :: rune(0x110000)
 
-Attr :: enum u8 { Bold, Dim, Italic, Underline, Blink, Inverse, Hidden, Strike }
-Attrs :: bit_set[Attr; u8]
+Attr :: enum u8 {
+	Bold,
+	Dim,
+	Italic,
+	Underline,
+	Blink,
+	Inverse,
+	Hidden,
+	Strike,
+}
+Attrs :: bit_set[Attr;u8]
 
 Cell :: struct {
-	ch:    rune,
+	ch:     rune,
 	fg, bg: u32,
-	attr:  Attrs,
-	wide:  u8, // 0 normal, 1 wide head, 2 wide tail, 3 spacer left when a wide char wrapped
-	link:  u16, // OSC 8 hyperlink id (0 none)
+	attr:   Attrs,
+	wide:   u8, // 0 normal, 1 wide head, 2 wide tail, 3 spacer left when a wide char wrapped
+	link:   u16, // OSC 8 hyperlink id (0 none)
 }
 
-BLANK :: Cell{ch = ' ', fg = DEF_FG, bg = DEF_BG}
+BLANK :: Cell {
+	ch = ' ',
+	fg = DEF_FG,
+	bg = DEF_BG,
+}
 
 Line :: struct {
 	cells:   []Cell,
@@ -52,13 +65,17 @@ ring_line :: #force_inline proc(r: ^Ring, i: int) -> []Cell {
 }
 
 new_line :: proc(cols: int) -> Line {
-	l := Line{cells = make([]Cell, cols)}
+	l := Line {
+		cells = make([]Cell, cols),
+	}
 	for &c in l.cells do c = BLANK
 	return l
 }
 
 ring_make :: proc(cap_, cols, rows: int) -> Ring {
-	r := Ring{buf = make([]Line, max(cap_, rows))}
+	r := Ring {
+		buf = make([]Line, max(cap_, rows)),
+	}
 	for i in 0 ..< rows do r.buf[i] = new_line(cols)
 	r.count = rows
 	return r
@@ -69,7 +86,16 @@ ring_free :: proc(r: ^Ring) {
 	delete(r.buf)
 }
 
-Parse_State :: enum u8 { Ground, Esc, Esc_Inter, Csi, Osc, Osc_Esc, Str, Str_Esc }
+Parse_State :: enum u8 {
+	Ground,
+	Esc,
+	Esc_Inter,
+	Csi,
+	Osc,
+	Osc_Esc,
+	Str,
+	Str_Esc,
+}
 
 Saved :: struct {
 	x, y:    int,
@@ -79,76 +105,96 @@ Saved :: struct {
 }
 
 Term :: struct {
-	mu:              sync.Mutex,
-	cols, rows:      int,
-	primary, alt:    Ring,
-	use_alt:         bool,
-	scrollback:      int,
-	cx, cy:          int,
-	wrap_pending:    bool,
-	pen:             Cell,
-	saved, saved_alt: Saved,
-	top, bot:        int,
-	tabs:            []bool,
+	mu:                                                                                                         sync.Mutex,
+	cols,
+	rows:                                                                                                 int,
+	primary,
+	alt:                                                                                               Ring,
+	use_alt:                                                                                                    bool,
+	scrollback:                                                                                                 int,
+	cx,
+	cy:                                                                                                     int,
+	wrap_pending:                                                                                               bool,
+	pen:                                                                                                        Cell,
+	saved,
+	saved_alt:                                                                                           Saved,
+	top,
+	bot:                                                                                                   int,
+	tabs:                                                                                                       []bool,
 	// modes
-	app_cursor, app_keypad, bracketed, focus_events, mouse_sgr, autowrap, origin, insert, reverse, sync_output: bool,
-	cursor_hidden:   bool,
-	alt_scroll:      bool,
-	mouse_mode:      int, // 0, 1000, 1002, 1003
-	cursor_shape:    int, // 0/1/2 block, 3/4 underline, 5/6 bar
-	charset_g0_line: bool,
-	last_char:       rune,
+	app_cursor,
+	app_keypad,
+	bracketed,
+	focus_events,
+	mouse_sgr,
+	autowrap,
+	origin,
+	insert,
+	reverse,
+	sync_output: bool,
+	cursor_hidden:                                                                                              bool,
+	alt_scroll:                                                                                                 bool,
+	mouse_mode:                                                                                                 int, // 0, 1000, 1002, 1003
+	cursor_shape:                                                                                               int, // 0/1/2 block, 3/4 underline, 5/6 bar
+	charset_g0_line:                                                                                            bool,
+	last_char:                                                                                                  rune,
 	// kitty keyboard protocol: flag stacks for main/alt screens
-	kb_stack:        [2][16]u8,
-	kb_depth:        [2]int,
+	kb_stack:                                                                                                   [2][16]u8,
+	kb_depth:                                                                                                   [2]int,
 	// grapheme clusters
-	clusters:        [dynamic]string,
-	cluster_ids:     map[string]rune,
+	clusters:                                                                                                   [dynamic]string,
+	cluster_ids:                                                                                                map[string]rune,
 	// view
-	view_off:        int, // lines scrolled back
-	total_pushed:    i64, // lines ever pushed off the top of primary (absolute line base)
-	dirty:           bool,
+	view_off:                                                                                                   int, // lines scrolled back
+	total_pushed:                                                                                               i64, // lines ever pushed off the top of primary (absolute line base)
+	dirty:                                                                                                      bool,
 	// parser
-	state:           Parse_State,
-	params:          [32]int,
-	sub:             [32]bool, // param i was introduced with ':'
-	nparams:         int,
-	priv:            u8,
-	inter:           u8,
-	strbuf:          [dynamic]u8,
-	str_overflow:    bool, // sequence exceeded its cap: discard instead of executing
-	str_kind:        u8, // 'P' DCS, '_' APC, '^' PM, 'X' SOS
-	utf8buf:         [4]u8,
-	utf8len, utf8need: int,
+	state:                                                                                                      Parse_State,
+	params:                                                                                                     [32]int,
+	sub:                                                                                                        [32]bool, // param i was introduced with ':'
+	nparams:                                                                                                    int,
+	priv:                                                                                                       u8,
+	inter:                                                                                                      u8,
+	strbuf:                                                                                                     [dynamic]u8,
+	str_overflow:                                                                                               bool, // sequence exceeded its cap: discard instead of executing
+	str_kind:                                                                                                   u8, // 'P' DCS, '_' APC, '^' PM, 'X' SOS
+	utf8buf:                                                                                                    [4]u8,
+	utf8len,
+	utf8need:                                                                                          int,
 	// metadata (read by UI thread under mu)
-	title:           string,
-	title_changed:   bool,
-	cwd:             string,
-	clipboard_set:   string,
-	clipboard_pending: bool,
-	bell:            bool,
-	notify:          [dynamic]string,
-	links:           [dynamic]string,
-	link_ids:        map[string]u16,
-	cur_link:        u16,
-	prompts:         [dynamic]i64,
-	cmd_start:       time.Tick, // OSC 133;C
-	cmd_running:     bool,
-	cmd_done:        Cmd_Done,  // set on OSC 133;D, consumed by the UI thread
-	palette:         [256]u32,
-	fg_color, bg_color, cursor_color: u32,
+	title:                                                                                                      string,
+	title_changed:                                                                                              bool,
+	cwd:                                                                                                        string,
+	clipboard_set:                                                                                              string,
+	clipboard_pending:                                                                                          bool,
+	bell:                                                                                                       bool,
+	notify:                                                                                                     [dynamic]string,
+	links:                                                                                                      [dynamic]string,
+	link_ids:                                                                                                   map[string]u16,
+	cur_link:                                                                                                   u16,
+	prompts:                                                                                                    [dynamic]i64,
+	cmd_start:                                                                                                  time.Tick, // OSC 133;C
+	cmd_running:                                                                                                bool,
+	cmd_done:                                                                                                   Cmd_Done, // set on OSC 133;D, consumed by the UI thread
+	agent:           Agent, // AI coding agent running in this pane (agent.odin)
+	pane_id:         int, // stable id for `kuraokami ctl`
+	palette:                                                                                                    [256]u32,
+	fg_color,
+	bg_color,
+	cursor_color:                                                                           u32,
 	// graphics
-	cell_w, cell_h:  int,
-	gfx:             Graphics,
+	cell_w,
+	cell_h:                                                                                             int,
+	gfx:                                                                                                        Graphics,
 	// io
-	pty:             Pty,
-	exited:          bool,
-	closing:         bool, // atomic: pane closed, the reader must stop touching the fd
-	refs:            i32,  // atomic: UI + reader + writer threads; the last one to let go frees the Term
-	wq:              [dynamic]u8, // pending input for the PTY (pty_queue.odin)
-	wmu:             sync.Mutex,
-	wcond:           sync.Cond,
-	reply:           [dynamic]u8,
+	pty:                                                                                                        Pty,
+	exited:                                                                                                     bool,
+	closing:                                                                                                    bool, // atomic: pane closed, the reader must stop touching the fd
+	refs:                                                                                                       i32, // atomic: UI + reader + writer threads; the last one to let go frees the Term
+	wq:                                                                                                         [dynamic]u8, // pending input for the PTY (pty_queue.odin)
+	wmu:                                                                                                        sync.Mutex,
+	wcond:                                                                                                      sync.Cond,
+	reply:                                                                                                      [dynamic]u8,
 }
 
 palette_reset :: proc(t: ^Term) {
@@ -188,6 +234,8 @@ term_destroy :: proc(t: ^Term) {
 	delete(t.title)
 	delete(t.cwd)
 	delete(t.clipboard_set)
+	delete(t.agent.name)
+	delete(t.agent.detail)
 	for s in t.links do delete(s)
 	delete(t.links)
 	delete(t.link_ids)
@@ -297,7 +345,16 @@ is_blank :: #force_inline proc(c: Cell) -> bool {
 // Rewrap every logical line of the primary screen to the new width, tracking the cursor.
 // line_map (optional, len r.count): receives the new ring index of each old line (-1 if dropped),
 // so anchors such as images and prompt marks can follow their text.
-reflow :: proc(t: ^Term, r: ^Ring, cols, rows, cap_: int, line_map: []int = nil) -> (Ring, int, int) {
+reflow :: proc(
+	t: ^Term,
+	r: ^Ring,
+	cols, rows, cap_: int,
+	line_map: []int = nil,
+) -> (
+	Ring,
+	int,
+	int,
+) {
 	ci := r.count - t.rows + t.cy
 	out := make([dynamic]Line)
 	defer delete(out)
@@ -324,12 +381,14 @@ reflow :: proc(t: ^Term, r: ^Ring, cols, rows, cap_: int, line_map: []int = nil)
 			x := 0
 			for pos < n && x < cols {
 				c := cells[pos]
-				if c.wide >= 2 {pos += 1; continue} // orphan tail or wrap spacer
+				if c.wide >= 2 {pos += 1; continue} 	// orphan tail or wrap spacer
 				if c.wide == 1 {
 					if x == cols - 1 do break // wide char moves to the next row
 					ln.cells[x] = c
 					if pos + 1 < len(cells) do ln.cells[x + 1] = cells[pos + 1]
-					if pos == cur_off || pos + 1 == cur_off {cur_row, cur_col = len(out), x + (1 if pos + 1 == cur_off else 0)}
+					if pos == cur_off ||
+					   pos + 1 ==
+						   cur_off {cur_row, cur_col = len(out), x + (1 if pos + 1 == cur_off else 0)}
 					x += 2
 					pos += 2
 					continue
@@ -361,7 +420,9 @@ reflow :: proc(t: ^Term, r: ^Ring, cols, rows, cap_: int, line_map: []int = nil)
 	start := max(0, len(out) - cap_)
 	if line_map != nil do for &m in line_map do m = m - start if m >= start && m < len(out) else -1
 	for k in 0 ..< start do delete(out[k].cells)
-	nr := Ring{buf = make([]Line, max(cap_, rows))}
+	nr := Ring {
+		buf = make([]Line, max(cap_, rows)),
+	}
 	for k in start ..< len(out) {
 		nr.buf[nr.count] = out[k]
 		nr.count += 1
@@ -377,7 +438,9 @@ ring_resize :: proc(t: ^Term, r: ^Ring, cap_, cols, rows, cy: int) -> (Ring, int
 	after := min(oldrows - cy - 1, max(0, rows - (cy + 1)))
 	n := through + after
 	start := max(0, n - cap_)
-	nr := Ring{buf = make([]Line, max(cap_, rows))}
+	nr := Ring {
+		buf = make([]Line, max(cap_, rows)),
+	}
 	for i in start ..< n {
 		src := ring_line(r, i)
 		dst := new_line(cols)
@@ -438,8 +501,38 @@ term_resize :: proc(t: ^Term, cols, rows: int) {
 // ---------- writing characters ----------
 
 DEC_LINE := [32]rune {
-	'◆', '▒', '␉', '␌', '␍', '␊', '°', '±', '␤', '␋', '┘', '┐', '┌', '└', '┼', '⎺',
-	'⎻', '─', '⎼', '⎽', '├', '┤', '┴', '┬', '│', '≤', '≥', 'π', '≠', '£', '·', ' ',
+	'◆',
+	'▒',
+	'␉',
+	'␌',
+	'␍',
+	'␊',
+	'°',
+	'±',
+	'␤',
+	'␋',
+	'┘',
+	'┐',
+	'┌',
+	'└',
+	'┼',
+	'⎺',
+	'⎻',
+	'─',
+	'⎼',
+	'⎽',
+	'├',
+	'┤',
+	'┴',
+	'┬',
+	'│',
+	'≤',
+	'≥',
+	'π',
+	'≠',
+	'£',
+	'·',
+	' ',
 }
 
 ZWJ :: rune(0x200D)
@@ -460,7 +553,10 @@ cell_text :: proc(t: ^Term, ch: rune, buf: ^[4]u8) -> string {
 cluster_append :: proc(t: ^Term, c: ^Cell, r: rune) {
 	if len(t.clusters) >= 65536 do return // shortcut: cap distinct clusters; beyond that extra marks are dropped
 	buf: [4]u8
-	s := strings.concatenate({cell_text(t, c.ch, &buf), string(utf8.runes_to_string({r}, context.temp_allocator))}, context.temp_allocator)
+	s := strings.concatenate(
+		{cell_text(t, c.ch, &buf), string(utf8.runes_to_string({r}, context.temp_allocator))},
+		context.temp_allocator,
+	)
 	if id, ok := t.cluster_ids[s]; ok {c.ch = id; return}
 	owned := strings.clone(s)
 	id := CLUSTER_BASE + rune(len(t.clusters))
@@ -497,7 +593,7 @@ put_ascii :: proc(t: ^Term, b: u8) {
 	t.wrap_pending = false
 	l := row(t, t.cy)
 	c := &l[t.cx]
-	if c.wide != 0 {put_char(t, rune(b)); return} // overwriting part of a wide char: slow path cleans up
+	if c.wide != 0 {put_char(t, rune(b)); return} 	// overwriting part of a wide char: slow path cleans up
 	c^ = t.pen
 	c.ch = rune(b)
 	c.link = t.cur_link
@@ -594,7 +690,11 @@ term_feed :: proc(t: ^Term, data: []u8) {
 			if b >= 0x20 && b < 0x30 {t.inter = b; continue}
 			if t.inter == '(' do t.charset_g0_line = b == '0'
 			else if t.inter == '#' && b == '8' {
-				for y in 0 ..< t.rows do for &c in row(t, y) do c = Cell{ch = 'E', fg = DEF_FG, bg = DEF_BG}
+				for y in 0 ..< t.rows do for &c in row(t, y) do c = Cell {
+					ch = 'E',
+					fg = DEF_FG,
+					bg = DEF_BG,
+				}
 			}
 			t.state = .Ground
 		case .Csi:
@@ -625,8 +725,8 @@ term_feed :: proc(t: ^Term, data: []u8) {
 				if b < 0x20 do control(t, b)
 			}
 		case .Osc:
-			if b == 0x07 {osc_dispatch(t); t.state = .Ground}
-			else if b == 0x1b do t.state = .Osc_Esc
+			if b ==
+			   0x07 {osc_dispatch(t); t.state = .Ground} else if b == 0x1b do t.state = .Osc_Esc
 			else do str_push(t, b, MAX_OSC)
 		case .Osc_Esc:
 			osc_dispatch(t)
@@ -634,17 +734,16 @@ term_feed :: proc(t: ^Term, data: []u8) {
 			if b != '\\' {t.state = .Esc; esc_dispatch(t, b)}
 		case .Str:
 			if b == 0x1b do t.state = .Str_Esc
-			else if b == 0x07 && t.str_kind != 'P' {str_dispatch(t); t.state = .Ground}
-			else do str_push(t, b, MAX_STR)
+			else if b == 0x07 && t.str_kind != 'P' {str_dispatch(t); t.state = .Ground} else do str_push(t, b, MAX_STR)
 		case .Str_Esc:
-			if b == '\\' {str_dispatch(t); t.state = .Ground}
-			else {
+			if b == '\\' {str_dispatch(t); t.state = .Ground} else {
 				str_push(t, 0x1b, MAX_STR)
 				str_push(t, b, MAX_STR)
 				t.state = .Str
 			}
 		}
 	}
+	if t.agent.name != "" do t.agent.last_output = time.tick_now()
 	t.dirty = true
 }
 
@@ -658,7 +757,9 @@ begin_seq :: proc(t: ^Term) {
 
 control :: proc(t: ^Term, b: u8) {
 	switch b {
-	case 0x07: t.bell = true
+	case 0x07:
+		t.bell = true
+		agent_attention(t)
 	case 0x08:
 		if t.cx > 0 {t.cx -= 1}
 		t.wrap_pending = false
@@ -696,17 +797,25 @@ esc_dispatch :: proc(t: ^Term, b: u8) {
 	case '(', ')', '*', '+', '#', '%', ' ':
 		t.inter = b
 		t.state = .Esc_Inter
-	case '7': save_cursor(t)
-	case '8': restore_cursor(t)
-	case 'D': linefeed(t)
-	case 'E': t.cx = 0; linefeed(t)
-	case 'H': t.tabs[t.cx] = true
+	case '7':
+		save_cursor(t)
+	case '8':
+		restore_cursor(t)
+	case 'D':
+		linefeed(t)
+	case 'E':
+		t.cx = 0; linefeed(t)
+	case 'H':
+		t.tabs[t.cx] = true
 	case 'M':
 		if t.cy == t.top do scroll_down(t, 1)
 		else if t.cy > 0 do t.cy -= 1
-	case 'c': full_reset(t)
-	case '=': t.app_keypad = true
-	case '>': t.app_keypad = false
+	case 'c':
+		full_reset(t)
+	case '=':
+		t.app_keypad = true
+	case '>':
+		t.app_keypad = false
 	case '\\':
 	}
 }
@@ -716,7 +825,8 @@ full_reset :: proc(t: ^Term) {
 	t.pen = BLANK
 	t.cx, t.cy = 0, 0
 	t.top, t.bot = 0, t.rows - 1
-	t.app_cursor, t.app_keypad, t.bracketed, t.focus_events, t.mouse_sgr = false, false, false, false, false
+	t.app_cursor, t.app_keypad, t.bracketed, t.focus_events, t.mouse_sgr =
+		false, false, false, false, false
 	t.origin, t.insert, t.reverse, t.cursor_hidden = false, false, false, false
 	t.autowrap = true
 	t.mouse_mode = 0
@@ -787,7 +897,8 @@ kb_csi :: proc(t: ^Term, b: u8) {
 	st := &t.kb_stack[s]
 	d := &t.kb_depth[s]
 	switch t.priv {
-	case '?': reply(t, fmt.tprintf("\x1b[?%du", kb_flags(t)))
+	case '?':
+		reply(t, fmt.tprintf("\x1b[?%du", kb_flags(t)))
 	case '>':
 		f := u8(param(t, 0, 0)) & KB_SUPPORTED
 		if d^ == len(st) {copy(st[:], st[1:]); d^ -= 1}
@@ -801,9 +912,12 @@ kb_csi :: proc(t: ^Term, b: u8) {
 		if d^ == 0 {st[0] = 0; d^ = 1}
 		cur := &st[d^ - 1]
 		switch mode {
-		case 1: cur^ = f
-		case 2: cur^ |= f
-		case 3: cur^ &~= f
+		case 1:
+			cur^ = f
+		case 2:
+			cur^ |= f
+		case 3:
+			cur^ &~= f
 		}
 	}
 }
@@ -820,15 +934,24 @@ csi_dispatch :: proc(t: ^Term, b: u8) {
 				mode := t.params[0]
 				st := 0
 				switch mode {
-				case 1: st = 1 if t.app_cursor else 2
-				case 7: st = 1 if t.autowrap else 2
-				case 25: st = 2 if t.cursor_hidden else 1
-				case 1000, 1002, 1003: st = 1 if t.mouse_mode == mode else 2
-				case 1004: st = 1 if t.focus_events else 2
-				case 1006: st = 1 if t.mouse_sgr else 2
-				case 1049, 47, 1047: st = 1 if t.use_alt else 2
-				case 2004: st = 1 if t.bracketed else 2
-				case 2026: st = 1 if t.sync_output else 2
+				case 1:
+					st = 1 if t.app_cursor else 2
+				case 7:
+					st = 1 if t.autowrap else 2
+				case 25:
+					st = 2 if t.cursor_hidden else 1
+				case 1000, 1002, 1003:
+					st = 1 if t.mouse_mode == mode else 2
+				case 1004:
+					st = 1 if t.focus_events else 2
+				case 1006:
+					st = 1 if t.mouse_sgr else 2
+				case 1049, 47, 1047:
+					st = 1 if t.use_alt else 2
+				case 2004:
+					st = 1 if t.bracketed else 2
+				case 2026:
+					st = 1 if t.sync_output else 2
 				}
 				reply(t, fmt.tprintf("\x1b[?%d;%d$y", mode, st))
 			}
@@ -837,8 +960,10 @@ csi_dispatch :: proc(t: ^Term, b: u8) {
 	}
 	if t.priv == '>' {
 		switch b {
-		case 'c': reply(t, "\x1b[>1;10;0c")
-		case 'q': reply(t, "\x1bP>|kuraokami " + VERSION + "\x1b\\")
+		case 'c':
+			reply(t, "\x1b[>1;10;0c")
+		case 'q':
+			reply(t, "\x1bP>|kuraokami " + VERSION + "\x1b\\")
 		}
 		return
 	}
@@ -852,14 +977,22 @@ csi_dispatch :: proc(t: ^Term, b: u8) {
 		n := min(p0, t.cols - t.cx)
 		copy(l[t.cx + n:], l[t.cx:t.cols - n])
 		clear_cells(t, l[t.cx:t.cx + n])
-	case 'A': move_to(t, t.cx, t.cy - p0 - (t.top if t.origin else 0))
-	case 'B', 'e': move_to(t, t.cx, t.cy + p0 - (t.top if t.origin else 0))
-	case 'C', 'a': move_to(t, t.cx + p0, t.cy - (t.top if t.origin else 0))
-	case 'D': move_to(t, t.cx - p0, t.cy - (t.top if t.origin else 0))
-	case 'E': move_to(t, 0, t.cy + p0 - (t.top if t.origin else 0))
-	case 'F': move_to(t, 0, t.cy - p0 - (t.top if t.origin else 0))
-	case 'G', '`': move_to(t, p0 - 1, t.cy - (t.top if t.origin else 0))
-	case 'H', 'f': move_to(t, param(t, 1, 1) - 1, p0 - 1)
+	case 'A':
+		move_to(t, t.cx, t.cy - p0 - (t.top if t.origin else 0))
+	case 'B', 'e':
+		move_to(t, t.cx, t.cy + p0 - (t.top if t.origin else 0))
+	case 'C', 'a':
+		move_to(t, t.cx + p0, t.cy - (t.top if t.origin else 0))
+	case 'D':
+		move_to(t, t.cx - p0, t.cy - (t.top if t.origin else 0))
+	case 'E':
+		move_to(t, 0, t.cy + p0 - (t.top if t.origin else 0))
+	case 'F':
+		move_to(t, 0, t.cy - p0 - (t.top if t.origin else 0))
+	case 'G', '`':
+		move_to(t, p0 - 1, t.cy - (t.top if t.origin else 0))
+	case 'H', 'f':
+		move_to(t, param(t, 1, 1) - 1, p0 - 1)
 	case 'I':
 		for _ in 0 ..< p0 {
 			t.cx = min(t.cx + 1, t.cols - 1)
@@ -891,9 +1024,12 @@ csi_dispatch :: proc(t: ^Term, b: u8) {
 	case 'K':
 		l := row(t, t.cy)
 		switch param(t, 0, 0) {
-		case 0: clear_cells(t, l[t.cx:]); row_ln(t, t.cy).wrapped = false
-		case 1: clear_cells(t, l[:t.cx + 1])
-		case 2: clear_row(t, t.cy)
+		case 0:
+			clear_cells(t, l[t.cx:]); row_ln(t, t.cy).wrapped = false
+		case 1:
+			clear_cells(t, l[:t.cx + 1])
+		case 2:
+			clear_row(t, t.cy)
 		}
 	case 'L', 'M':
 		if t.cy >= t.top && t.cy <= t.bot {
@@ -909,8 +1045,10 @@ csi_dispatch :: proc(t: ^Term, b: u8) {
 		n := min(p0, t.cols - t.cx)
 		copy(l[t.cx:], l[t.cx + n:])
 		clear_cells(t, l[t.cols - n:])
-	case 'S': scroll_up_region(t, p0)
-	case 'T': scroll_down(t, p0)
+	case 'S':
+		scroll_up_region(t, p0)
+	case 'T':
+		scroll_down(t, p0)
 	case 'X':
 		l := row(t, t.cy)
 		clear_cells(t, l[t.cx:min(t.cx + p0, t.cols)])
@@ -921,20 +1059,27 @@ csi_dispatch :: proc(t: ^Term, b: u8) {
 		}
 	case 'b':
 		if t.last_char != 0 do for _ in 0 ..< min(p0, 65535) do put_char(t, t.last_char)
-	case 'c': if t.priv == 0 do reply(t, "\x1b[?62;4;22c")
-	case 'd': move_to(t, t.cx, p0 - 1)
+	case 'c':
+		if t.priv == 0 do reply(t, "\x1b[?62;4;22c")
+	case 'd':
+		move_to(t, t.cx, p0 - 1)
 	case 'g':
 		switch param(t, 0, 0) {
-		case 0: t.tabs[t.cx] = false
-		case 3: for &s in t.tabs do s = false
+		case 0:
+			t.tabs[t.cx] = false
+		case 3:
+			for &s in t.tabs do s = false
 		}
 	case 'h', 'l':
 		for i in 0 ..< max(t.nparams, 1) do if t.params[i] == 4 do t.insert = b == 'h'
-	case 'm': sgr(t)
+	case 'm':
+		sgr(t)
 	case 'n':
 		switch param(t, 0, 0) {
-		case 5: reply(t, "\x1b[0n")
-		case 6: reply(t, fmt.tprintf("\x1b[%d;%dR", t.cy + 1 - (t.top if t.origin else 0), t.cx + 1))
+		case 5:
+			reply(t, "\x1b[0n")
+		case 6:
+			reply(t, fmt.tprintf("\x1b[%d;%dR", t.cy + 1 - (t.top if t.origin else 0), t.cx + 1))
 		}
 	case 'r':
 		top, bot := param(t, 0, 1) - 1, param(t, 1, t.rows) - 1
@@ -942,13 +1087,18 @@ csi_dispatch :: proc(t: ^Term, b: u8) {
 			t.top, t.bot = top, bot
 			move_to(t, 0, 0)
 		}
-	case 's': save_cursor(t)
-	case 'u': restore_cursor(t)
+	case 's':
+		save_cursor(t)
+	case 'u':
+		restore_cursor(t)
 	case 't':
 		switch param(t, 0, 0) {
-		case 14: reply(t, fmt.tprintf("\x1b[4;%d;%dt", t.rows * t.cell_h, t.cols * t.cell_w))
-		case 16: reply(t, fmt.tprintf("\x1b[6;%d;%dt", t.cell_h, t.cell_w))
-		case 18: reply(t, fmt.tprintf("\x1b[8;%d;%dt", t.rows, t.cols))
+		case 14:
+			reply(t, fmt.tprintf("\x1b[4;%d;%dt", t.rows * t.cell_h, t.cols * t.cell_w))
+		case 16:
+			reply(t, fmt.tprintf("\x1b[6;%d;%dt", t.cell_h, t.cell_w))
+		case 18:
+			reply(t, fmt.tprintf("\x1b[8;%d;%dt", t.rows, t.cols))
 		}
 	}
 }
@@ -966,23 +1116,33 @@ scroll_up_region :: proc(t: ^Term, n: int) {
 
 set_mode_private :: proc(t: ^Term, m: int, on: bool) {
 	switch m {
-	case 1: t.app_cursor = on
-	case 5: t.reverse = on
+	case 1:
+		t.app_cursor = on
+	case 5:
+		t.reverse = on
 	case 6:
 		t.origin = on
 		move_to(t, 0, 0)
-	case 7: t.autowrap = on
-	case 25: t.cursor_hidden = !on
-	case 47, 1047: set_alt(t, on, on)
+	case 7:
+		t.autowrap = on
+	case 25:
+		t.cursor_hidden = !on
+	case 47, 1047:
+		set_alt(t, on, on)
 	case 1049:
-		if on {save_cursor(t); set_alt(t, true, true)}
-		else {set_alt(t, false, false); restore_cursor(t)}
-	case 1000, 1002, 1003: t.mouse_mode = m if on else 0
-	case 1004: t.focus_events = on
-	case 1006: t.mouse_sgr = on
-	case 1007: t.alt_scroll = on
-	case 2004: t.bracketed = on
-	case 2026: t.sync_output = on
+		if on {save_cursor(t); set_alt(t, true, true)} else {set_alt(t, false, false); restore_cursor(t)}
+	case 1000, 1002, 1003:
+		t.mouse_mode = m if on else 0
+	case 1004:
+		t.focus_events = on
+	case 1006:
+		t.mouse_sgr = on
+	case 1007:
+		t.alt_scroll = on
+	case 2004:
+		t.bracketed = on
+	case 2026:
+		t.sync_output = on
 	}
 }
 
@@ -999,7 +1159,10 @@ sgr_color :: proc(t: ^Term, i: ^int) -> (u32, bool) {
 		off := 2
 		if t.sub[i^ + 2] && i^ + 5 < t.nparams && t.sub[i^ + 5] do off = 3
 		if i^ + off + 2 >= t.nparams do return 0, false
-		r, g, b := u32(t.params[i^ + off] & 0xff), u32(t.params[i^ + off + 1] & 0xff), u32(t.params[i^ + off + 2] & 0xff)
+		r, g, b :=
+			u32(t.params[i^ + off] & 0xff),
+			u32(t.params[i^ + off + 1] & 0xff),
+			u32(t.params[i^ + off + 2] & 0xff)
 		i^ += off + 2
 		return r << 16 | g << 8 | b, true
 	}
@@ -1014,37 +1177,62 @@ sgr :: proc(t: ^Term) {
 	for i := 0; i < t.nparams; i += 1 {
 		p := t.params[i]
 		switch p {
-		case 0: t.pen.fg, t.pen.bg, t.pen.attr = DEF_FG, DEF_BG, {}
-		case 1: t.pen.attr += {.Bold}
-		case 2: t.pen.attr += {.Dim}
-		case 3: t.pen.attr += {.Italic}
+		case 0:
+			t.pen.fg, t.pen.bg, t.pen.attr = DEF_FG, DEF_BG, {}
+		case 1:
+			t.pen.attr += {.Bold}
+		case 2:
+			t.pen.attr += {.Dim}
+		case 3:
+			t.pen.attr += {.Italic}
 		case 4:
 			if i + 1 < t.nparams && t.sub[i + 1] {
 				if t.params[i + 1] == 0 do t.pen.attr -= {.Underline}
 				else do t.pen.attr += {.Underline}
 				i += 1
 			} else do t.pen.attr += {.Underline}
-		case 5, 6: t.pen.attr += {.Blink}
-		case 7: t.pen.attr += {.Inverse}
-		case 8: t.pen.attr += {.Hidden}
-		case 9: t.pen.attr += {.Strike}
-		case 21: t.pen.attr += {.Underline}
-		case 22: t.pen.attr -= {.Bold, .Dim}
-		case 23: t.pen.attr -= {.Italic}
-		case 24: t.pen.attr -= {.Underline}
-		case 25: t.pen.attr -= {.Blink}
-		case 27: t.pen.attr -= {.Inverse}
-		case 28: t.pen.attr -= {.Hidden}
-		case 29: t.pen.attr -= {.Strike}
-		case 30 ..= 37: t.pen.fg = PAL | u32(p - 30)
-		case 38: if c, ok := sgr_color(t, &i); ok do t.pen.fg = c
-		case 39: t.pen.fg = DEF_FG
-		case 40 ..= 47: t.pen.bg = PAL | u32(p - 40)
-		case 48: if c, ok := sgr_color(t, &i); ok do t.pen.bg = c
-		case 49: t.pen.bg = DEF_BG
-		case 58: sgr_color(t, &i) // underline color: parsed, not rendered
-		case 90 ..= 97: t.pen.fg = PAL | u32(p - 90 + 8)
-		case 100 ..= 107: t.pen.bg = PAL | u32(p - 100 + 8)
+		case 5, 6:
+			t.pen.attr += {.Blink}
+		case 7:
+			t.pen.attr += {.Inverse}
+		case 8:
+			t.pen.attr += {.Hidden}
+		case 9:
+			t.pen.attr += {.Strike}
+		case 21:
+			t.pen.attr += {.Underline}
+		case 22:
+			t.pen.attr -= {.Bold, .Dim}
+		case 23:
+			t.pen.attr -= {.Italic}
+		case 24:
+			t.pen.attr -= {.Underline}
+		case 25:
+			t.pen.attr -= {.Blink}
+		case 27:
+			t.pen.attr -= {.Inverse}
+		case 28:
+			t.pen.attr -= {.Hidden}
+		case 29:
+			t.pen.attr -= {.Strike}
+		case 30 ..= 37:
+			t.pen.fg = PAL | u32(p - 30)
+		case 38:
+			if c, ok := sgr_color(t, &i); ok do t.pen.fg = c
+		case 39:
+			t.pen.fg = DEF_FG
+		case 40 ..= 47:
+			t.pen.bg = PAL | u32(p - 40)
+		case 48:
+			if c, ok := sgr_color(t, &i); ok do t.pen.bg = c
+		case 49:
+			t.pen.bg = DEF_BG
+		case 58:
+			sgr_color(t, &i) // underline color: parsed, not rendered
+		case 90 ..= 97:
+			t.pen.fg = PAL | u32(p - 90 + 8)
+		case 100 ..= 107:
+			t.pen.bg = PAL | u32(p - 100 + 8)
 		}
 	}
 }
@@ -1087,6 +1275,7 @@ osc_dispatch :: proc(t: ^Term) {
 		delete(t.title)
 		t.title = strings.clone(rest)
 		t.title_changed = true
+		agent_on_title(t)
 	case 4:
 		parts := strings.split(rest, ";", context.temp_allocator)
 		for i := 0; i + 1 < len(parts); i += 2 {
@@ -1095,7 +1284,19 @@ osc_dispatch :: proc(t: ^Term) {
 			if parts[i + 1] == "?" {
 				c := t.palette[idx]
 				r, g, b := (c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff
-				reply(t, fmt.tprintf("\x1b]4;%d;rgb:%02x%02x/%02x%02x/%02x%02x\x1b\\", idx, r, r, g, g, b, b))
+				reply(
+					t,
+					fmt.tprintf(
+						"\x1b]4;%d;rgb:%02x%02x/%02x%02x/%02x%02x\x1b\\",
+						idx,
+						r,
+						r,
+						g,
+						g,
+						b,
+						b,
+					),
+				)
 			} else if c, ok2 := parse_color_spec(parts[i + 1]); ok2 do t.palette[idx] = c
 		}
 	case 7:
@@ -1110,8 +1311,9 @@ osc_dispatch :: proc(t: ^Term) {
 		i := strings.index_byte(rest, ';')
 		uri := "" if i < 0 else rest[i + 1:]
 		if uri == "" || len(uri) > 4096 do t.cur_link = 0
-		else if id, ok := t.link_ids[uri]; ok do t.cur_link = id // same URI reuses its id (ls --hyperlink repeats them)
-		else if len(t.links) >= 65535 do t.cur_link = 0
+		else if id, ok := t.link_ids[uri]; ok do t.cur_link = id
+		else // same URI reuses its id (ls --hyperlink repeats them)
+		if len(t.links) >= 65535 do t.cur_link = 0
 		else {
 			owned := strings.clone(uri)
 			append(&t.links, owned)
@@ -1120,8 +1322,12 @@ osc_dispatch :: proc(t: ^Term) {
 		}
 	case 9:
 		if len(t.notify) < 4 do append(&t.notify, strings.clone(rest[:min(len(rest), 512)]))
+		agent_attention(t)
 	case 777:
 		if strings.has_prefix(rest, "notify;") && len(t.notify) < 4 do append(&t.notify, strings.clone(rest[7:min(len(rest), 519)]))
+		agent_attention(t)
+	case 7700:
+		agent_explicit(t, rest) // kuraokami agent protocol: OSC 7700 ; state [; detail]
 	case 10, 11, 12:
 		target := [3]^u32{&t.fg_color, &t.bg_color, &t.cursor_color}
 		p := target[code - 10]
@@ -1146,15 +1352,19 @@ osc_dispatch :: proc(t: ^Term) {
 				if idx, ok1 := strconv.parse_int(part); ok1 && idx >= 0 && idx < 16 do t.palette[idx] = cfg.palette[idx]
 			}
 		}
-	case 110: t.fg_color = cfg.fg
-	case 111: t.bg_color = cfg.bg
-	case 112: t.cursor_color = cfg.cursor
+	case 110:
+		t.fg_color = cfg.fg
+	case 111:
+		t.bg_color = cfg.bg
+	case 112:
+		t.cursor_color = cfg.cursor
 	case 133:
 		if strings.has_prefix(rest, "A") {
 			abs := t.total_pushed + i64(t.cy)
 			if len(t.prompts) == 0 || t.prompts[len(t.prompts) - 1] != abs do append(&t.prompts, abs)
 			if len(t.prompts) > 4096 do remove_range(&t.prompts, 0, 1024)
 		} else if strings.has_prefix(rest, "C") {
+			agent_on_command_start(t)
 			t.cmd_start = time.tick_now()
 			t.cmd_running = true
 		} else if strings.has_prefix(rest, "D") && t.cmd_running {
@@ -1163,6 +1373,7 @@ osc_dispatch :: proc(t: ^Term) {
 			status := 0
 			if i := strings.index_byte(rest, ';'); i >= 0 do status, _ = strconv.parse_int(rest[i + 1:])
 			t.cmd_done = {time.duration_seconds(time.tick_since(t.cmd_start)), status, true}
+			agent_on_command_end(t)
 		}
 	}
 }

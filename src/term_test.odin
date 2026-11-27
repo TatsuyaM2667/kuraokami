@@ -231,9 +231,7 @@ test_search :: proc(tt: ^testing.T) {
 
 @(test)
 test_shell_integration :: proc(tt: ^testing.T) {
-	saved := integration_ready
-	defer integration_ready = saved
-	integration_ready = true
+	integration_ready = true // no restore: tests run in parallel and a restore would race the other test using it
 	argv, env := integrate({"/usr/bin/zsh"})
 	testing.expect_value(tt, len(argv), 1)
 	found := false
@@ -376,9 +374,7 @@ test_ime_enter_does_not_eat_commit :: proc(tt: ^testing.T) {
 
 @(test)
 test_fish_integration_env :: proc(tt: ^testing.T) {
-	saved := integration_ready
-	defer integration_ready = saved
-	integration_ready = true
+	integration_ready = true // no restore: tests run in parallel and a restore would race the other test using it
 	_, env := integrate({"/usr/bin/fish"})
 	found := false
 	for e in env do if e[0] == "XDG_DATA_DIRS" && strings.contains(e[1], "/xdg:") do found = true
@@ -412,4 +408,37 @@ test_reflow_keeps_image_anchor :: proc(tt: ^testing.T) {
 	testing.expect_value(tt, img_line(t), "X")
 	term_resize(t, 20, 6)
 	testing.expect_value(tt, img_line(t), "X")
+}
+
+@(test)
+test_agent_detection :: proc(tt: ^testing.T) {
+	if cfg.agent_commands == "" do cfg.agent_commands = "claude, opencode, agy, codex, gemini"
+	testing.expect_value(tt, agent_name_of("claude"), "claude")
+	testing.expect_value(tt, agent_name_of("FOO=1 npx @anthropic-ai/claude-code --resume"), "claude")
+	testing.expect_value(tt, agent_name_of("/usr/local/bin/opencode run"), "opencode")
+	testing.expect_value(tt, agent_name_of("git status"), "")
+	testing.expect_value(tt, agent_name_of("vim claude.md"), "") // the agent name as an argument is not an agent
+
+	t := mk(40, 10)
+	defer {term_destroy(t); free(t)}
+	// shell integration: command start, title = command line
+	feed(t, "\x1b]133;C\x07\x1b]2;claude\x07")
+	testing.expect_value(tt, t.agent.name, "claude")
+	testing.expect_value(tt, agent_state(t), Agent_State.Working) // output just arrived
+	feed(t, "\x07") // bell: wants the user
+	testing.expect_value(tt, agent_state(t), Agent_State.Blocked)
+	t.agent.attention = false
+	t.agent.last_output = {} // long quiet
+	testing.expect_value(tt, agent_state(t), Agent_State.Idle)
+	t.agent.last_output = {}
+	feed(t, "Do you want to proceed? (y/n)")
+	t.agent.last_output = {}
+	testing.expect_value(tt, agent_state(t), Agent_State.Blocked) // question on screen
+	feed(t, "\x1b]7700;working;refactoring\x07") // explicit report wins
+	testing.expect_value(tt, agent_state(t), Agent_State.Working)
+	testing.expect_value(tt, t.agent.detail, "refactoring")
+	feed(t, "\x1b]133;D;0\x07")
+	testing.expect_value(tt, agent_state(t), Agent_State.Done)
+	feed(t, "\x1b]133;C\x07\x1b]2;ls\x07") // next command clears the finished agent
+	testing.expect_value(tt, agent_state(t), Agent_State.None)
 }

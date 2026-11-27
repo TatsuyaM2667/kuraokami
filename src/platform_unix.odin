@@ -82,6 +82,7 @@ pty_spawn :: proc(t: ^Term, cwd: string, argv_s: []string, env: [][2]string = ni
 		execvp(argv[0], &argv[0])
 		_exit(127)
 	}
+	cloexec(fd)
 	t.pty = {fd, pid}
 	return true
 }
@@ -228,6 +229,7 @@ quick_listen :: proc(on_toggle: proc()) -> bool {
 	_ = posix.unlink(strings.clone_to_cstring(quick_socket_path(), context.temp_allocator)) // stale socket from a crash
 	fd := posix.socket(.UNIX, .STREAM)
 	if fd < 0 do return false
+	cloexec(i32(fd))
 	if posix.bind(fd, (^posix.sockaddr)(&addr), size_of(addr)) != .OK ||
 	   posix.listen(fd, 4) != .OK {
 		posix.close(fd)
@@ -236,6 +238,7 @@ quick_listen :: proc(on_toggle: proc()) -> bool {
 	thread.create_and_start_with_poly_data2(fd, on_toggle, proc(fd: posix.FD, on_toggle: proc()) {
 			for {
 				c := posix.accept(fd, nil, nil)
+				if c >= 0 do cloexec(i32(c))
 				if c < 0 do continue
 				buf: [16]u8
 				n := read(i32(c), &buf[0], len(buf))
@@ -290,4 +293,126 @@ exec_shell :: proc(args: []string, env: [][2]string) {
 	execvp(argv[0], raw_data(argv))
 	fmt.eprintln("kuraokami --shell: cannot start", args[0])
 	os.exit(127)
+}
+
+// ---------- control socket (`kuraokami ctl`) ----------
+
+ctl_socket_path :: proc() -> string {
+	dir := os.get_env("XDG_RUNTIME_DIR", context.temp_allocator)
+	if dir == "" do return fmt.tprintf("/tmp/kuraokami-%d-%d.sock", posix.getuid(), posix.getpid())
+	return fmt.tprintf("%s/kuraokami-%d.sock", dir, posix.getpid())
+}
+
+// Accept requests (NUL-separated args, sender shuts down its write side) and hand them to the UI thread.
+ctl_serve :: proc(path: string) -> bool {
+	addr: posix.sockaddr_un
+	if len(path) >= len(addr.sun_path) do return false
+	addr.sun_family = .UNIX
+	for i in 0 ..< len(path) do addr.sun_path[i] = c.char(path[i])
+	cpath := strings.clone_to_cstring(path, context.temp_allocator)
+	_ = posix.unlink(cpath)
+	fd := posix.socket(.UNIX, .STREAM)
+	if fd < 0 do return false
+	cloexec(i32(fd))
+	if posix.bind(fd, (^posix.sockaddr)(&addr), size_of(addr)) != .OK || posix.listen(fd, 8) != .OK {
+		posix.close(fd)
+		return false
+	}
+	_ = posix.chmod(cpath, {.IRUSR, .IWUSR}) // owner only: other users must not drive our panes
+	thread.create_and_start_with_poly_data(fd, proc(fd: posix.FD) {
+		for {
+			conn := posix.accept(fd, nil, nil)
+			if conn >= 0 do cloexec(i32(conn))
+			if conn < 0 do continue
+			payload := make([dynamic]u8)
+			buf: [4096]u8
+			for len(payload) < 1 << 20 {
+				n := read(i32(conn), &buf[0], len(buf))
+				if n <= 0 do break
+				append(&payload, ..buf[:n])
+			}
+			ctl_enqueue(i32(conn), payload[:])
+			delete(payload)
+		}
+	}, self_cleanup = true)
+	return true
+}
+
+ctl_write :: proc(fd: i32, s: string) {
+	d := transmute([]u8)s
+	for len(d) > 0 {
+		n := write(fd, raw_data(d), uint(len(d)))
+		if n <= 0 do return
+		d = d[n:]
+	}
+}
+
+ctl_close :: proc(fd: i32) {posix.close(posix.FD(fd))}
+
+ctl_cleanup :: proc(path: string) {
+	if path != "" do _ = posix.unlink(strings.clone_to_cstring(path, context.temp_allocator))
+}
+
+// `kuraokami ctl ...`: send args to $KURAOKAMI_SOCKET and print the reply.
+ctl_client :: proc(args: []string) -> int {
+	path := os.get_env("KURAOKAMI_SOCKET", context.temp_allocator)
+	if path == "" {
+		fmt.eprintln("kuraokami ctl: KURAOKAMI_SOCKET is not set (run this inside a kuraokami pane)")
+		return 2
+	}
+	addr: posix.sockaddr_un
+	if len(path) >= len(addr.sun_path) do return 2
+	addr.sun_family = .UNIX
+	for i in 0 ..< len(path) do addr.sun_path[i] = c.char(path[i])
+	fd := posix.socket(.UNIX, .STREAM)
+	if fd < 0 || posix.connect(fd, (^posix.sockaddr)(&addr), size_of(addr)) != .OK {
+		fmt.eprintln("kuraokami ctl: cannot connect to", path)
+		return 2
+	}
+	defer posix.close(fd)
+	msg := strings.join(args, "\x00", context.temp_allocator)
+	ctl_write(i32(fd), msg)
+	_ = posix.shutdown(fd, .WR)
+	out := make([dynamic]u8, context.temp_allocator)
+	buf: [4096]u8
+	for {
+		n := read(i32(fd), &buf[0], len(buf))
+		if n <= 0 do break
+		append(&out, ..buf[:n])
+	}
+	reply := string(out[:])
+	if strings.has_prefix(reply, "error:") {
+		fmt.eprint(reply)
+		return 1
+	}
+	fmt.print(reply)
+	return 0
+}
+
+// `kuraokami agent-state <working|blocked|idle|done|clear> [detail]`: report the state of the agent
+// running in this terminal (OSC 7700). Works from agent hooks: it writes to /dev/tty.
+agent_state_cli :: proc(args: []string) -> int {
+	if len(args) == 0 {
+		fmt.eprintln("usage: kuraokami agent-state <working|blocked|idle|done|clear> [detail]")
+		return 2
+	}
+	detail := strings.join(args[1:], " ", context.temp_allocator)
+	clean, _ := strings.replace_all(detail, "\x07", "", context.temp_allocator)
+	clean, _ = strings.replace_all(clean, "\x1b", "", context.temp_allocator)
+	seq := fmt.tprintf("\x1b]7700;%s;%s\x07", args[0], clean)
+	fd := posix.open("/dev/tty", {.WRONLY})
+	if fd < 0 {
+		fmt.eprintln("kuraokami agent-state: no terminal (/dev/tty)")
+		return 1
+	}
+	defer posix.close(fd)
+	ctl_write(i32(fd), seq)
+	return 0
+}
+
+// Child processes must not inherit our descriptors: a shell holding another pane's PTY master or a
+// `ctl` connection would keep it open (no hang-up, clients waiting forever for EOF).
+cloexec :: proc(fd: i32) {
+	FD_CLOEXEC :: 1
+	posix.fcntl(posix.FD(fd), .SETFD, c.int(FD_CLOEXEC))
 }

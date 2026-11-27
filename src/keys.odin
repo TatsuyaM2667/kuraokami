@@ -42,6 +42,7 @@ Action :: enum u8 {
 	Clear_Scrollback,
 	Toggle_Fullscreen,
 	Command_Palette,
+	Toggle_Agents,
 	Unbind,
 }
 
@@ -99,6 +100,7 @@ DEFAULT_BINDS := [?]string {
 	"ctrl+shift+f=search",
 	"ctrl+shift+k=clear_scrollback",
 	"ctrl+shift+p=command_palette",
+	"ctrl+shift+g=toggle_agents",
 	"f11=toggle_fullscreen",
 	"ctrl+shift+1=goto_tab:1",
 	"ctrl+shift+2=goto_tab:2",

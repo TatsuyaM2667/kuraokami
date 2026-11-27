@@ -144,3 +144,12 @@ exec_shell :: proc(args: []string, env: [][2]string) {
 	fmt.eprintln("kuraokami --shell is not supported on Windows yet")
 	os.exit(1)
 }
+
+// shortcut: the control socket / agent-state need a named pipe or ConPTY tty access on Windows.
+ctl_socket_path :: proc() -> string {return ""}
+ctl_serve :: proc(path: string) -> bool {return false}
+ctl_write :: proc(fd: i32, s: string) {}
+ctl_close :: proc(fd: i32) {}
+ctl_cleanup :: proc(path: string) {}
+ctl_client :: proc(args: []string) -> int {fmt.eprintln("kuraokami ctl is not supported on Windows yet"); return 2}
+agent_state_cli :: proc(args: []string) -> int {fmt.eprintln("kuraokami agent-state is not supported on Windows yet"); return 2}

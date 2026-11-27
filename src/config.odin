@@ -41,6 +41,9 @@ Config :: struct {
 	click_to_move:      bool,
 	renderer:           string, // "" auto | "gles"
 	tab_bar:            string, // always | auto | never
+	agent_commands: string, // command names treated as AI agents
+	agent_sidebar:  string, // auto | always | never
+	agent_notify:   bool,
 	ui_font:            string, // proportional font for the tab bar
 	ui_font_scale:      f32,
 	working_dir:        string, // home | inherit | <path>
@@ -110,6 +113,9 @@ config_defaults :: proc() {
 		quick_autohide     = true,
 		click_to_move      = true,
 		tab_bar            = "always",
+		agent_commands = "claude, opencode, agy, antigravity, codex, gemini, aider, cursor-agent, goose, amp, crush, qwen, kimi",
+		agent_sidebar = "auto",
+		agent_notify = true,
 		ui_font            = "Noto Sans CJK JP, Noto Sans, Inter, Cantarell, DejaVu Sans, sans-serif",
 		ui_font_scale      = 0.9,
 		fetch_logo_size    = {30, 14},
@@ -256,6 +262,11 @@ config_apply_text :: proc(text: string, errs: ^[dynamic]string, allow_theme := t
 			cfg.ui_font = strings.clone(v)
 		case "ui-font-scale":
 			if f, ok := strconv.parse_f32(v); ok && f >= 0.5 && f <= 2 do cfg.ui_font_scale = f
+			else do bad = true
+		case "agent-commands": cfg.agent_commands = strings.clone(v)
+		case "agent-notify": cfg.agent_notify = parse_bool(v)
+		case "agent-sidebar":
+			if v == "auto" || v == "always" || v == "never" do cfg.agent_sidebar = strings.clone(v)
 			else do bad = true
 		case "tab-bar":
 			if v == "always" || v == "auto" || v == "never" do cfg.tab_bar = strings.clone(v)

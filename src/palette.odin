@@ -60,6 +60,7 @@ ACTION_LABELS := [Action]string {
 	.Clear_Scrollback  = "スクロールバックを消去",
 	.Toggle_Fullscreen = "フルスクリーン切り替え",
 	.Command_Palette   = "",
+	.Toggle_Agents     = "エージェント一覧の表示 / 非表示",
 	.Unbind            = "",
 }
 

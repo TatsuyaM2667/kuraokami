@@ -27,6 +27,7 @@
 - [キーバインド](#キーバインド)
 - [設定](#設定)
 - [クイックターミナル](#クイックターミナル)
+- [AI コーディングエージェント](#ai-コーディングエージェント)
 - [Zed などほかのエディタで使う](#zed-などほかのエディタで使う)
 - [シェル統合と zsh プリセット](#シェル統合と-zsh-プリセット)
 - [fastfetch のロゴ](#fastfetch-のロゴ)
@@ -230,6 +231,9 @@ keybind = ctrl+shift+d=split_right
 | `fetch-logo-animate-seconds` | `30` | GIF・動画ロゴを再生する秒数（`0` で無制限。省電力のため既定は 30 秒で停止） |
 | `cursor-click-to-move` | `true` | プロンプトの入力行をクリックでカーソル移動 |
 | `tab-bar` | `always` | ブラウザのようなタブバーを常に表示（`auto` で 2 枚以上のときだけ、`never` で非表示） |
+| `agent-commands` | `claude, opencode, agy, …` | AI エージェントとみなすコマンド名（カンマ区切り） |
+| `agent-sidebar` | `auto` | エージェント一覧サイドバー（`auto` で起動中だけ、`always`、`never`） |
+| `agent-notify` | `true` | 見ていないエージェントが入力待ち・応答完了になったら通知 |
 | `ui-font` | `Noto Sans CJK JP, Noto Sans, …` | タブバーの文字に使うプロポーショナルフォント（候補リスト） |
 | `ui-font-scale` | `0.9` | タブバーの文字の大きさ（端末の文字に対する倍率） |
 | `working-directory` | `home` | 起動時の最初のタブのディレクトリ（`home` / `inherit`＝起動元のディレクトリ / 任意のパス）。新しいタブは今のタブのディレクトリを引き継ぐ |
@@ -269,7 +273,47 @@ keybind = clear                      # 既定のバインドを全部消す
 `resize_left` `resize_right` `resize_up` `resize_down` `equalize_splits`
 `scroll_page_up` `scroll_page_down` `scroll_top` `scroll_bottom` `prompt_prev` `prompt_next`
 `font_inc` `font_dec` `font_reset` `open_config` `reload_config` `search` `clear_scrollback`
-`toggle_fullscreen` `command_palette` `unbind`
+`toggle_fullscreen` `command_palette` `toggle_agents` `unbind`
+
+## AI コーディングエージェント
+
+Claude Code・opencode・Antigravity・Codex・Gemini CLI・aider などを **ふつうに起動するだけ** で、kuraokami がその状態を追跡します（エージェント側の設定は不要）。
+
+| 状態 | 意味 | 判定方法 |
+|---|---|---|
+| 🔵 作業中 working | 出力が続いている | 直近 1.5 秒以内に出力あり |
+| 🟡 入力待ち blocked | あなたの返事を待っている | ベル / OSC 9・777 通知 / 画面の質問（`(y/n)` `Do you want` など） |
+| ⚪ 待機中 idle | 応答し終わって次の指示待ち | 出力が止まり、質問もない |
+| 🟢 終了 done | エージェントが終了した | シェル統合の OSC 133;D |
+
+- **サイドバー**（左、エージェント起動時に自動表示・`Ctrl+Shift+G` で切り替え）: 全タブのエージェントと状態・経過時間。クリックでそのペインへ移動
+- **タブの色付きの点**: そのタブでいちばん急ぎのエージェントの状態
+- **通知**: 見ていないタブのエージェントが入力待ちになった・長い作業を終えたとき
+- **制御 API**: ペインの中から `kuraokami ctl` で他のペイン/エージェントを操作（エージェント同士の連携に）
+
+```sh
+kuraokami ctl list                     # ペイン一覧: id タブ 状態 エージェント cwd タイトル
+id=$(kuraokami ctl new-tab claude)     # 新しいタブでエージェントを起動
+kuraokami ctl submit $id "テストを直して"  # 指示を送る（貼り付け + Enter）
+kuraokami ctl wait $id idle 900          # 応答が終わるまで待つ
+kuraokami ctl read $id 60                # 画面の最後の 60 行を読む
+```
+
+ソケットは `$XDG_RUNTIME_DIR/kuraokami-<pid>.sock`（所有者のみ読み書き可、`0600`）で、各ペインには `KURAOKAMI_SOCKET` と `KURAOKAMI_PANE_ID` が渡されます。
+
+より正確にしたい場合は、エージェントのフックから状態を明示できます（`OSC 7700 ; working|blocked|idle|done|clear [; 詳細]`）。Claude Code なら `~/.claude/settings.json` に:
+
+```jsonc
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "kuraokami agent-state working" }] }],
+    "Notification":     [{ "hooks": [{ "type": "command", "command": "kuraokami agent-state blocked" }] }],
+    "Stop":             [{ "hooks": [{ "type": "command", "command": "kuraokami agent-state idle" }] }]
+  }
+}
+```
+
+設定: `agent-commands`（エージェントとみなすコマンド名、カンマ区切り）・`agent-sidebar = auto | always | never`・`agent-notify = true`
 
 ## Zed などほかのエディタで使う
 

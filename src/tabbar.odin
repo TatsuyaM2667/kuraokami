@@ -91,9 +91,18 @@ draw_tabbar :: proc(w: int) {
 		}
 		show_close := tw_i >= 8 * fonts.cell_w
 		room := tw - cw * (4.2 if show_close else 1.6)
-		label := ui_truncate(tab_title(tb), max(cw, room))
 		fg := alpha(fgc, 1.0 if active else 0.85 if hover else 0.5)
-		draw_ui_text(&ren.ov, x0 + cw * 0.9, ty, label, fg)
+		lx := x0 + cw * 0.9
+		if tb.agent_state != .None {
+			// Agent status dot: working / waiting for you / idle / finished
+			dr := uh * 0.2
+			dcx, dcy := lx + dr, ty + uh / 2
+			rounded_rect(&ren.ov, dcx - dr, dcy - dr, dcx + dr, dcy + dr, dr, alpha(agent_color(tb.agent_state), 1))
+			lx += dr * 2 + cw * 0.6
+			room -= dr * 2 + cw * 0.6
+		}
+		label := ui_truncate(tab_title(tb), max(cw, room))
+		draw_ui_text(&ren.ov, lx, ty, label, fg)
 		if show_close && (active || hover) {
 			cx := x1 - cw * 1.6
 			cy := top + (H - top) / 2

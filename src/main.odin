@@ -32,6 +32,7 @@ Node :: struct {
 
 Tab :: struct {
 	root, focus: ^Node,
+	agent_state: Agent_State, // most urgent agent state in this tab (tab bar dot)
 }
 
 App :: struct {
@@ -76,6 +77,11 @@ App :: struct {
 	hover_url:                                          string, // link target shown while Ctrl is held over it
 	last_notify:                                        f64,
 	cli_cwd:                                            string, // --working-directory (overrides the config)
+	agents_on:     bool, // agent sidebar enabled (Ctrl+Shift+G)
+	agent_count:   int,
+	agent_hits:    [dynamic]Agent_Hit,
+	ctl_waits:     [dynamic]Ctl_Wait,
+	ctl_path:      string, // this instance's control socket
 	quick:                                              bool, // running as the quick terminal (--quick)
 	quick_hidden:                                       bool,
 	tab_hover:                                          Tab_Hit,
@@ -229,6 +235,14 @@ new_term :: proc(cwd: string, argv: []string = nil) -> ^Term {
 	args := argv
 	env: [][2]string
 	if args == nil do args, env = shell_argv()
+	// Every pane knows its id and how to reach kuraokami (`kuraokami ctl`, used by agents).
+	pane_counter += 1
+	t.pane_id = pane_counter
+	env2 := make([dynamic][2]string, context.temp_allocator)
+	append(&env2, ..env)
+	if app.ctl_path != "" do append(&env2, [2]string{"KURAOKAMI_SOCKET", app.ctl_path})
+	append(&env2, [2]string{"KURAOKAMI_PANE_ID", fmt.tprint(t.pane_id)})
+	env = env2[:]
 	if !pty_spawn(t, cwd, args, env) {
 		term_destroy(t)
 		free(t)
@@ -383,7 +397,8 @@ layout :: proc() {
 	w, h: c.int
 	_ = sdl.GetWindowSizeInPixels(app.window, &w, &h)
 	app.tabbar_h = fonts.cell_h + 14 if tabbar_visible() else 0
-	for tab in app.tabs do layout_node(tab.root, {0, app.tabbar_h, int(w), int(h) - app.tabbar_h})
+	sw := agent_sidebar_w() // agent sidebar on the left, below the tab bar
+	for tab in app.tabs do layout_node(tab.root, {sw, app.tabbar_h, int(w) - sw, int(h) - app.tabbar_h})
 	app.redraw = true
 	update_ime_rect()
 }
@@ -618,6 +633,7 @@ truncate_cells :: proc(s: string, maxc: int) -> string {
 draw_overlay_ui :: proc(w, h: int) {
 	set_offset(0)
 	scissor(0, 0, w, h)
+	draw_agent_sidebar(w, h)
 	if app.tabbar_h > 0 do draw_tabbar(w)
 	if app.search_on {
 		leaf := current_tab().focus
@@ -732,6 +748,7 @@ render :: proc() {
 
 send :: proc(s: string) {
 	t := focused()
+	agent_user_input(t) // typing into an agent answers whatever it was waiting for
 	if t.view_off != 0 {
 		sync.mutex_lock(&t.mu)
 		t.view_off = 0
@@ -966,6 +983,9 @@ run_action :: proc(b: Keybind) {
 		}
 	case .Reload_Config:
 		apply_config()
+	case .Toggle_Agents:
+		app.agents_on = !app.agents_on
+		layout()
 	case .Command_Palette:
 		palette_open()
 	case .Search:
@@ -1365,6 +1385,7 @@ url_at :: proc(t: ^Term, x, y: int) -> string {
 
 on_mouse_button :: proc(e: sdl.MouseButtonEvent) {
 	px, py := int(e.x * app.density), int(e.y * app.density)
+	if e.down && agent_sidebar_visible() && agent_sidebar_click(px, py) do return
 	if (app.tabbar_h > 0 && py < app.tabbar_h) || (!e.down && app.tab_drag >= 0) {
 		w, h: c.int
 		_ = sdl.GetWindowSizeInPixels(app.window, &w, &h)
@@ -1547,6 +1568,7 @@ on_wheel :: proc(e: sdl.MouseWheelEvent) {
 
 process_wake :: proc() {
 	sync.atomic_store(&wake_pending, false)
+	ctl_process()
 	if sync.atomic_exchange(&quick_toggle, false) {
 		if app.quick_hidden do quick_show()
 		else do quick_hide()
@@ -1622,6 +1644,9 @@ process_wake :: proc() {
 
 main :: proc() {
 	args := os.args
+	// Subcommands that run without a window.
+	if len(args) > 1 && args[1] == "ctl" do os.exit(ctl_client(args[2:]))
+	if len(args) > 1 && args[1] == "agent-state" do os.exit(agent_state_cli(args[2:]))
 	for i := 1; i < len(args); i += 1 {
 		switch args[i] {
 		case "-v", "--version":
@@ -1707,6 +1732,12 @@ main :: proc() {
 	if e := post_shader_load(cfg.custom_shader); e != "" do show_toast(e)
 	else if len(errs) > 0 do show_toast(fmt.tprintf("config: %s", strings.join(errs, " / ", context.temp_allocator)))
 	app.running = true
+	// Control socket first: every pane (also the first one) gets KURAOKAMI_SOCKET.
+	app.agents_on = cfg.agent_sidebar != "never"
+	if !app.quick {
+		p := ctl_socket_path()
+		if ctl_serve(p) do app.ctl_path = strings.clone(p)
+	}
 	if !(cfg.restore_session && len(app.exec_argv) == 0 && !app.quick && session_restore()) do new_tab()
 	if len(app.tabs) == 0 {fmt.eprintln("kuraokami: failed to spawn shell"); os.exit(1)}
 	_ = sdl.StartTextInput(app.window)
@@ -1739,6 +1770,8 @@ main :: proc() {
 		}
 		// Animated fetch logo: wake exactly at its next frame (15 fps), not every vsync.
 		if lms := logo_anim_tick(); lms >= 0 do timeout = lms if timeout < 0 else min(timeout, lms)
+		// Running agents: re-check once a second (working -> idle needs time to pass). No agents, no wakeups.
+		if ams := agent_tick(); ams >= 0 do timeout = ams if timeout < 0 else min(timeout, ams)
 		got := sdl.WaitEvent(&ev) if timeout < 0 else sdl.WaitEventTimeout(&ev, timeout)
 		app.now = now_s()
 		if got {
@@ -1756,6 +1789,7 @@ main :: proc() {
 	}
 	for tab in app.tabs do for_leaves(tab.root, proc(n: ^Node, _: rawptr) {pty_close(n.term)}, nil)
 	if app.quick do quick_cleanup()
+	ctl_cleanup(app.ctl_path)
 	sdl.Quit()
 }
 
@@ -1842,3 +1876,5 @@ run_shell_mode :: proc() {
 	argv, env := shell_argv()
 	exec_shell(argv, env)
 }
+
+pane_counter: int
