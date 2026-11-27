@@ -168,7 +168,7 @@ static_to_png :: proc(src: string) -> string {
 	img, ierr := image.load_from_bytes(data, {.alpha_add_if_missing})
 	if ierr != nil do return ""
 	defer image.destroy(img)
-	px := bytes.buffer_to_bytes(&img.pixels)
+	px := image_bytes(img)
 	if img.channels != 4 || img.depth != 8 do return ""
 	rgba, w, h := downscale_rgba(px, img.width, img.height, 640, 640)
 	out := cache_png_path(src)

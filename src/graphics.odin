@@ -219,7 +219,7 @@ kitty_load :: proc(t: ^Term, k: ^Kitty_Ctrl, b64: []u8) -> (pixels: []u8, w, h: 
 		img, err := png.load_from_bytes(data, {.alpha_add_if_missing})
 		if err != nil do return nil, 0, 0, "EBADPNG:decode failed"
 		defer png.destroy(img)
-		src := bytes.buffer_to_bytes(&img.pixels)
+		src := image_bytes(img)
 		n := img.width * img.height
 		if img.channels != 4 || len(src) < n * 4 * (img.depth / 8) do return nil, 0, 0, "EBADPNG:format"
 		out := make([]u8, n * 4)

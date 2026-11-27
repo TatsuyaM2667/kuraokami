@@ -276,7 +276,7 @@ test_png_roundtrip :: proc(tt: ^testing.T) {
 	testing.expect(tt, err == nil)
 	if err == nil {
 		defer png.destroy(img)
-		b := bytes.buffer_to_bytes(&img.pixels)
+		b := image_bytes(img)
 		testing.expect_value(tt, img.width, 2)
 		testing.expect_value(tt, b[0], u8(0)) // top-left = last row of input = (0,0,255)
 		testing.expect_value(tt, b[2], u8(255))
@@ -398,7 +398,12 @@ test_reflow_keeps_image_anchor :: proc(tt: ^testing.T) {
 	img_line :: proc(t: ^Term) -> string {
 		for p in t.gfx.placements {
 			l, ok := abs_line(t, p.abs_row)
-			if ok do return string([]u8{u8(l[0].ch)})
+			// A string pointing at a compound literal can't be returned (an error since Odin dev-2026-11): use a static byte.
+			@(static) one: [1]u8
+			if ok {
+				one[0] = u8(l[0].ch)
+				return string(one[:])
+			}
 		}
 		return "?"
 	}
